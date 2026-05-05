@@ -1,0 +1,16 @@
+query CartDeliveryOptionsTransformRunInput {
+  cart {
+    shippingCampaign: attribute(key: "_hh_shipping_campaign") {
+      value
+    }
+    hideEco: attribute(key: "_hh_hide_eco") {
+      value
+    }
+    deliveryGroups {
+      deliveryOptions {
+        handle
+        title
+      }
+    }
+  }
+}
