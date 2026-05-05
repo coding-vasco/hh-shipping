@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -185,6 +185,116 @@ function highlightJson(json) {
   return parts;
 }
 
+function highlightDsl(source) {
+  const tokenPattern =
+    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(settings|campaigns|HideRates|CodeQualifier|NoDiscountCodeQualifier|CartSubtotalQualifier|CartQuantityQualifier|CartHasItemQualifier|CountryCodeQualifier|ProductTagSelector|RateNameSelector|AllRatesSelector)\b|\b(name|condition|qualifiers|rateSelector|match|codes|names|amount|comparison|selector|tags|productTags|countryCodes|enabled)\b(?=\s*:)|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g;
+  const parts = [];
+  let lastIndex = 0;
+
+  for (const match of source.matchAll(tokenPattern)) {
+    if (match.index > lastIndex) parts.push(source.slice(lastIndex, match.index));
+
+    const [token, comment, string, helper, key, literal, number] = match;
+    const color = comment
+      ? "#6a737d"
+      : string
+        ? "#0a7f3f"
+        : helper
+          ? "#8250df"
+          : key
+            ? "#0550ae"
+            : literal
+              ? "#cf222e"
+              : number
+                ? "#953800"
+                : "inherit";
+
+    parts.push(
+      <span key={`${match.index}-${token}`} style={{ color, fontWeight: helper ? 600 : 400 }}>
+        {token}
+      </span>,
+    );
+    lastIndex = match.index + token.length;
+  }
+
+  parts.push(source.slice(lastIndex));
+  return parts;
+}
+
+function DslEditor({ value, onChange }) {
+  const [scroll, setScroll] = useState({ left: 0, top: 0 });
+  const textareaRef = useRef(null);
+
+  return (
+    <div
+      style={{
+        background: "#fbfbfb",
+        border: "1px solid #c9cccf",
+        borderRadius: 6,
+        boxSizing: "border-box",
+        minHeight: 520,
+        position: "relative",
+        width: "100%",
+      }}
+    >
+      <pre
+        aria-hidden="true"
+        style={{
+          boxSizing: "border-box",
+          color: "#1f2124",
+          fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+          fontSize: 13,
+          inset: 0,
+          lineHeight: 1.5,
+          margin: 0,
+          overflow: "hidden",
+          padding: 16,
+          pointerEvents: "none",
+          position: "absolute",
+          whiteSpace: "pre",
+        }}
+      >
+        <span style={{ display: "inline-block", transform: `translate(${-scroll.left}px, ${-scroll.top}px)` }}>
+          {highlightDsl(value)}
+        </span>
+      </pre>
+      <textarea
+        ref={textareaRef}
+        name="rulesScript"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onScroll={(event) =>
+          setScroll({
+            left: event.currentTarget.scrollLeft,
+            top: event.currentTarget.scrollTop,
+          })
+        }
+        spellCheck="false"
+        style={{
+          background: "transparent",
+          border: 0,
+          boxSizing: "border-box",
+          caretColor: "#1f2124",
+          color: "transparent",
+          fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+          fontSize: 13,
+          inset: 0,
+          lineHeight: 1.5,
+          margin: 0,
+          minHeight: 520,
+          outline: "none",
+          overflow: "auto",
+          padding: 16,
+          position: "absolute",
+          resize: "vertical",
+          whiteSpace: "pre",
+          width: "100%",
+        }}
+      />
+    </div>
+  );
+}
+
 export default function Index() {
   const loaderData = useLoaderData();
   const actionData = useActionData();
@@ -231,25 +341,7 @@ export default function Index() {
 
           <Form method="post">
             <s-stack gap="base">
-              <textarea
-                name="rulesScript"
-                value={rulesScript}
-                onChange={(event) => setRulesScript(event.target.value)}
-                spellCheck="false"
-                style={{
-                  background: "#fbfbfb",
-                  border: "1px solid #c9cccf",
-                  borderRadius: 6,
-                  boxSizing: "border-box",
-                  color: "#1f2124",
-                  fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                  minHeight: 520,
-                  padding: 16,
-                  width: "100%",
-                }}
-              />
+              <DslEditor value={rulesScript} onChange={setRulesScript} />
 
               {actionData && !actionData.ok ? (
                 <s-banner tone="critical" heading="Rules could not be saved">

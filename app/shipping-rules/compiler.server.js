@@ -98,7 +98,7 @@ function asStringArray(value, path, errors) {
     return [];
   }
 
-  return value.map((item) => item.trim());
+  return Array.from(value, (item) => item.trim());
 }
 
 function assertMatch(value, allowed, path, errors) {
@@ -216,7 +216,7 @@ function validateSettings(settingsValue, errors) {
     return [];
   }
 
-  const normalizedTags = tags.map((tag) => String(tag).trim()).filter(Boolean);
+  const normalizedTags = Array.from(tags, (tag) => String(tag).trim()).filter(Boolean);
   for (const tag of normalizedTags) {
     if (!SUPPORTED_PRODUCT_TAGS.has(tag)) {
       errors.push(
