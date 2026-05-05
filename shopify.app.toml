@@ -2,7 +2,7 @@
 
 client_id = "e0d0700268c0d0467bf53827f56bd4b5"
 name = "hh-shipping-poc"
-application_url = "https://example.com"
+application_url = "https://hh-shipping.onrender.com"
 embedded = true
 
 [access_scopes]
@@ -45,7 +45,12 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+  "https://hh-shipping.onrender.com/auth/callback",
+  "https://hh-shipping.onrender.com/auth/shopify/callback",
+  "https://hh-shipping.onrender.com/api/auth/callback",
+  "https://hh-shipping.onrender.com/api/auth"
+]
 
 [build]
 automatically_update_urls_on_dev = true
