@@ -1,13 +1,26 @@
-import {describe, expect, test} from "vitest";
-import {cartDeliveryOptionsTransformRun} from "../src/cart_delivery_options_transform_run.js";
+import { describe, expect, test } from "vitest";
+import { cartDeliveryOptionsTransformRun } from "../src/cart_delivery_options_transform_run.js";
 
-function input({campaign, hideEco, deliveryOptions}) {
+function input({ config = null, discountCodes = [], subtotal = 42, lines = [], deliveryOptions }) {
   return {
+    deliveryCustomization: {
+      metafield: config ? { jsonValue: config } : null,
+    },
     cart: {
-      shippingCampaign: campaign ? {value: campaign} : null,
-      hideEco: hideEco ? {value: hideEco} : null,
+      discountCodes: { value: JSON.stringify(discountCodes) },
+      shippingCampaign: null,
+      hideEco: null,
+      cost: {
+        subtotalAmount: {
+          amount: String(subtotal),
+        },
+      },
+      lines,
       deliveryGroups: [
         {
+          deliveryAddress: {
+            countryCode: "PT",
+          },
           deliveryOptions,
         },
       ],
@@ -16,14 +29,12 @@ function input({campaign, hideEco, deliveryOptions}) {
 }
 
 describe("delivery customization rules", () => {
-  test("normal carts hide subscription delivery options", () => {
+  test("fallback normal carts hide subscription delivery options", () => {
     const result = cartDeliveryOptionsTransformRun(
       input({
-        campaign: "normal",
-        hideEco: "false",
         deliveryOptions: [
-          {handle: "standard", title: "Standard Shipping"},
-          {handle: "subscription", title: "Subscription Delivery"},
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "subscription", title: "Subscription Delivery" },
         ],
       }),
     );
@@ -39,14 +50,13 @@ describe("delivery customization rules", () => {
     });
   });
 
-  test("subscription campaigns hide non-subscription delivery options", () => {
+  test("fallback subscription campaigns hide non-subscription delivery options", () => {
     const result = cartDeliveryOptionsTransformRun(
       input({
-        campaign: "subscription_only",
-        hideEco: "false",
+        discountCodes: ["GOLDJOY"],
         deliveryOptions: [
-          {handle: "standard", title: "Standard Shipping"},
-          {handle: "subscription", title: "Subscription Delivery"},
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "subscription", title: "Subscription Delivery" },
         ],
       }),
     );
@@ -62,15 +72,28 @@ describe("delivery customization rules", () => {
     });
   });
 
-  test("HHCSF flag hides eco delivery options", () => {
+  test("published config can hide all rates below subtotal threshold", () => {
     const result = cartDeliveryOptionsTransformRun(
       input({
-        campaign: "normal",
-        hideEco: "true",
+        subtotal: 8,
+        discountCodes: ["NOMORERUST"],
+        config: {
+          version: 1,
+          rules: [
+            {
+              id: "nomorerust-minimum",
+              enabled: true,
+              conditions: {
+                discountCodeIncludes: ["NOMORERUST"],
+                subtotalLessThan: 10,
+              },
+              actions: [{ type: "hideAllDeliveryOptions" }],
+            },
+          ],
+        },
         deliveryOptions: [
-          {handle: "standard", title: "Standard Shipping"},
-          {handle: "eco", title: "Eco Delivery"},
-          {handle: "subscription", title: "Subscription Delivery"},
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "express", title: "Express Shipping" },
         ],
       }),
     );
@@ -79,35 +102,12 @@ describe("delivery customization rules", () => {
       operations: [
         {
           deliveryOptionHide: {
-            deliveryOptionHandle: "eco",
+            deliveryOptionHandle: "standard",
           },
         },
         {
           deliveryOptionHide: {
-            deliveryOptionHandle: "subscription",
-          },
-        },
-      ],
-    });
-  });
-
-  test("matches delivery option handle as well as title", () => {
-    const result = cartDeliveryOptionsTransformRun(
-      input({
-        campaign: "subscription_only",
-        hideEco: "true",
-        deliveryOptions: [
-          {handle: "carrier-standard-eco", title: "Free Shipping"},
-          {handle: "carrier-subscription", title: "Free Shipping"},
-        ],
-      }),
-    );
-
-    expect(result).toEqual({
-      operations: [
-        {
-          deliveryOptionHide: {
-            deliveryOptionHandle: "carrier-standard-eco",
+            deliveryOptionHandle: "express",
           },
         },
       ],

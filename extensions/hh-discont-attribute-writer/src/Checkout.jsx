@@ -9,6 +9,7 @@ import {
 
 const SHIPPING_CAMPAIGN_ATTRIBUTE = "_hh_shipping_campaign";
 const HIDE_ECO_ATTRIBUTE = "_hh_hide_eco";
+const DISCOUNT_CODES_ATTRIBUTE = "_hh_discount_codes";
 
 export default async () => {
   render(<Extension />, document.body);
@@ -18,9 +19,10 @@ function Extension() {
   const discountCodes = useDiscountCodes();
   const applyAttributeChange = useApplyAttributeChange();
 
-  const [currentCampaign, currentHideEco] = useAttributeValues([
+  const [currentCampaign, currentHideEco, currentDiscountCodes] = useAttributeValues([
     SHIPPING_CAMPAIGN_ATTRIBUTE,
     HIDE_ECO_ATTRIBUTE,
+    DISCOUNT_CODES_ATTRIBUTE,
   ]);
 
   const nextAttributes = useMemo(() => {
@@ -35,6 +37,7 @@ function Extension() {
     const hideEco = codes.some((code) => code.includes("HHCSF"));
 
     return {
+      codes,
       campaign: subscriptionOnly ? "subscription_only" : "normal",
       hideEco: hideEco ? "true" : "false",
     };
@@ -62,14 +65,25 @@ function Extension() {
           value: nextAttributes.hideEco,
         });
       }
+
+      const nextDiscountCodes = JSON.stringify(nextAttributes.codes);
+      if (currentDiscountCodes !== nextDiscountCodes) {
+        await applyAttributeChange({
+          type: "updateAttribute",
+          key: DISCOUNT_CODES_ATTRIBUTE,
+          value: nextDiscountCodes,
+        });
+      }
     }
 
     syncAttributes();
   }, [
     applyAttributeChange,
     currentCampaign,
+    currentDiscountCodes,
     currentHideEco,
     nextAttributes.campaign,
+    nextAttributes.codes,
     nextAttributes.hideEco,
   ]);
 

@@ -32,3 +32,12 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+model ShippingRulesConfig {
+  id            Int      @id @default(autoincrement())
+  shop          String   @unique
+  rulesJson     String
+  publishedJson String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
