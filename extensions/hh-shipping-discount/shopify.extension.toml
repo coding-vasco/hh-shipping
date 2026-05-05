@@ -1,0 +1,21 @@
+api_version = "2026-04"
+uid = "0e66e45d-5358-bb44-1cdd-f34a18500f98bc6c2556"
+
+[[extensions]]
+name = "t:name"
+handle = "hh-shipping-discount"
+type = "function"
+description = "t:description"
+
+  [[extensions.targeting]]
+  target = "cart.delivery-options.discounts.generate.run"
+  input_query = "src/cart_delivery_options_discounts_generate_run.graphql"
+  export = "cart-delivery-options-discounts-generate-run"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"
+
+  [extensions.ui.paths]
+  create = "/"
+  details = "/"

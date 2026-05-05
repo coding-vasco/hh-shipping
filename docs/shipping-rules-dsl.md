@@ -12,13 +12,16 @@ Every campaign has three parts:
 2. Qualifiers: when the campaign applies.
 3. Rate selector: which delivery options are affected.
 
-Phase 1 supports one campaign type:
+Phase 1 supports two campaign types:
 
 ```js
 HideRates({ ... })
+ShippingDiscount({ ... })
 ```
 
 `HideRates` hides matching delivery options when its qualifiers match the cart.
+
+`ShippingDiscount` applies a percentage or fixed-amount discount to matching delivery options when its qualifiers match the cart. This campaign type is powered by the Shopify Discount Function extension, not the Delivery Customization Function.
 
 ## File Shape
 
@@ -37,6 +40,16 @@ campaigns([
       // Qualifiers go here.
     ],
     rateSelector: RateNameSelector({ match: "include", names: ["eco"] }),
+  }),
+
+  ShippingDiscount({
+    name: "Free standard shipping",
+    condition: "all",
+    qualifiers: [
+      CodeQualifier({ match: "include", codes: ["FREESHIP"] }),
+    ],
+    rateSelector: RateNameSelector({ match: "include", names: ["standard"] }),
+    discount: PercentageDiscount({ percent: 100, message: "Free Shipping" }),
   }),
 ]);
 ```
@@ -96,8 +109,6 @@ CartQuantityQualifier({ comparison: "less_than_or_equal", amount: 5 })
 ```
 
 ### Cart Has Product Tag
-
-Phase 1 currently supports product tag presence only: amount must be `1` and comparison must be `"greater_than_or_equal"`.
 
 The tag must also be declared in `settings({ productTags: [...] })`.
 
@@ -159,6 +170,25 @@ AllRatesSelector()
 
 Use this carefully. It should generally be paired with a clear checkout message in a later validation phase.
 
+## Supported Shipping Discounts
+
+Use these inside `ShippingDiscount({ discount: ... })`.
+
+### Percentage Discount
+
+```js
+PercentageDiscount({ percent: 100, message: "Free Shipping" })
+PercentageDiscount({ percent: 50, message: "50% Off Shipping" })
+```
+
+### Fixed Amount Discount
+
+Uses store currency.
+
+```js
+FixedAmountDiscount({ amount: 5, message: "5 Off Shipping" })
+```
+
 ## Working Examples
 
 ### HHCSF Hides Eco
@@ -173,6 +203,50 @@ HideRates({
   rateSelector: RateNameSelector({ match: "include", names: ["eco"] }),
 })
 ```
+
+### Subscription Free Standard Shipping
+
+```js
+ShippingDiscount({
+  name: "Subscription free standard shipping",
+  condition: "all",
+  qualifiers: [
+    CartHasItemQualifier({
+      comparison: "greater_than_or_equal",
+      amount: 1,
+      selector: ProductTagSelector({ match: "match", tags: ["subs_box_mvp"] }),
+    }),
+  ],
+  rateSelector: RateNameSelector({ match: "include", names: ["standard"] }),
+  discount: PercentageDiscount({ percent: 100, message: "Free Shipping" }),
+})
+```
+
+### Free Priority By Discount Code Or Cart Quantity
+
+This mirrors the shape of the Script Editor campaign that gives free priority when a code matches or enough qualifying items are in the cart.
+
+```js
+ShippingDiscount({
+  name: "Free Priority Shipping",
+  condition: "any",
+  qualifiers: [
+    CodeQualifier({
+      match: "include",
+      codes: ["DEAR", "HHXGYMSHARK", "SPINWIN_FS"],
+    }),
+    CartHasItemQualifier({
+      comparison: "greater_than_or_equal",
+      amount: 5,
+      selector: ProductTagSelector({ match: "does_not_match", tags: ["bf22_exc"] }),
+    }),
+  ],
+  rateSelector: RateNameSelector({ match: "include", names: ["Priority", "Prioritaire"] }),
+  discount: PercentageDiscount({ percent: 100, message: "Free Priority Shipping" }),
+})
+```
+
+Note: Phase 1 supports product-tag quantity checks. Product-tag subtotal checks are a later vocabulary expansion.
 
 ### VIP/GOLDJOY Subscription Only
 
@@ -229,7 +303,7 @@ NOMORERUST must be used with at least one paid jewelry item.
 Use a prompt like this:
 
 ```txt
-I am editing HH Shipping Rules DSL. Do not use arbitrary JavaScript, loops, variables, or custom functions. Only use settings(), campaigns(), HideRates(), CodeQualifier(), NoDiscountCodeQualifier(), CartSubtotalQualifier(), CartQuantityQualifier(), CartHasItemQualifier(), ProductTagSelector(), CountryCodeQualifier(), RateNameSelector(), and AllRatesSelector().
+I am editing HH Shipping Rules DSL. Do not use arbitrary JavaScript, loops, variables, or custom functions. Only use settings(), campaigns(), HideRates(), ShippingDiscount(), CodeQualifier(), NoDiscountCodeQualifier(), CartSubtotalQualifier(), CartQuantityQualifier(), CartHasItemQualifier(), ProductTagSelector(), CountryCodeQualifier(), RateNameSelector(), AllRatesSelector(), PercentageDiscount(), and FixedAmountDiscount().
 
 Create a campaign that [describe the business rule]. Use condition "all" when every qualifier must match and "any" when any qualifier can match. Match discount codes and rate names case-insensitively by text inclusion.
 ```

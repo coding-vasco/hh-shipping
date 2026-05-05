@@ -8,6 +8,7 @@ describe("shipping rules DSL compiler", () => {
 
     assert.equal(config.version, 1);
     assert.equal(config.rules.length, 4);
+    assert.equal(config.shippingDiscounts.length, 1);
     assert.equal(config.rules[0].conditions.discountCodeIncludes[0], "VIP50");
     assert.equal(config.rules[0].actions[0].type, "hideDeliveryOptionsWhereTitleDoesNotInclude");
   });
@@ -56,6 +57,40 @@ describe("shipping rules DSL compiler", () => {
     });
     assert.equal(config.rules[0].actions[0].type, "hideAllDeliveryOptions");
   });
+
+  test("compiles a shipping discount campaign", () => {
+    const { config } = compileRulesScript(`
+      settings({ productTags: ["subs_box_mvp"] });
+      campaigns([
+        ShippingDiscount({
+          name: "Subscription free standard shipping",
+          condition: "all",
+          qualifiers: [
+            CartHasItemQualifier({
+              comparison: "greater_than_or_equal",
+              amount: 1,
+              selector: ProductTagSelector({ match: "match", tags: ["subs_box_mvp"] }),
+            }),
+          ],
+          rateSelector: RateNameSelector({ match: "include", names: ["standard"] }),
+          discount: PercentageDiscount({ percent: 100, message: "Free Shipping" }),
+        }),
+      ]);
+    `);
+
+    assert.equal(config.rules.length, 0);
+    assert.equal(config.shippingDiscounts.length, 1);
+    assert.deepEqual(config.shippingDiscounts[0].rateSelector, {
+      type: "deliveryOptionsWhereTitleIncludes",
+      values: ["standard"],
+    });
+    assert.deepEqual(config.shippingDiscounts[0].discount, {
+      type: "percentage",
+      value: 100,
+      message: "Free Shipping",
+    });
+  });
+
 
   test("rejects product tags that are not wired in the function input query", () => {
     assert.throws(

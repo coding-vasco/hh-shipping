@@ -1,59 +1,9 @@
 // @ts-check
 
 /**
- * @typedef {import("../generated/api").CartDeliveryOptionsTransformRunInput} CartDeliveryOptionsTransformRunInput
- * @typedef {import("../generated/api").CartDeliveryOptionsTransformRunResult} CartDeliveryOptionsTransformRunResult
+ * @typedef {import("../generated/api").CartDeliveryOptionsDiscountsGenerateRunInput} CartDeliveryOptionsDiscountsGenerateRunInput
+ * @typedef {import("../generated/api").CartDeliveryOptionsDiscountsGenerateRunResult} CartDeliveryOptionsDiscountsGenerateRunResult
  */
-
-const FALLBACK_RULES = {
-  version: 1,
-  rules: [
-    {
-      id: "vip-goldjoy-subscription-only",
-      enabled: true,
-      conditions: { discountCodeIncludes: ["VIP50", "GOLDJOY"] },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleDoesNotInclude",
-          values: ["subscription"],
-        },
-      ],
-    },
-    {
-      id: "normal-hide-subscription",
-      enabled: true,
-      conditions: { noDiscountCode: true },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleIncludes",
-          values: ["subscription"],
-        },
-      ],
-    },
-    {
-      id: "non-campaign-hide-subscription",
-      enabled: true,
-      conditions: { discountCodeDoesNotInclude: ["VIP50", "GOLDJOY"] },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleIncludes",
-          values: ["subscription"],
-        },
-      ],
-    },
-    {
-      id: "hhcsf-hide-eco",
-      enabled: true,
-      conditions: { discountCodeIncludes: ["HHCSF"] },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleIncludes",
-          values: ["eco"],
-        },
-      ],
-    },
-  ],
-};
 
 function lower(value) {
   return String(value ?? "").toLowerCase();
@@ -99,8 +49,10 @@ function cartSignals(input) {
     const product = line.merchandise?.product;
     if (!product) continue;
     const tags = [];
-    if (product.boxShipping) knownTags.push("box_shipping");
-    if (product.boxShipping) tags.push("box_shipping");
+    if (product.boxShipping) {
+      knownTags.push("box_shipping");
+      tags.push("box_shipping");
+    }
     if (product.subsBoxMvp) {
       knownTags.push("subs_box_mvp");
       tags.push("subs_box_mvp");
@@ -155,87 +107,55 @@ function matchesConditions(rule, signals, deliveryGroup, deliveryOption) {
   const text = optionText(deliveryOption);
   const countryCode = lower(deliveryGroup.deliveryAddress?.countryCode);
 
-  if (conditions.noDiscountCode === true && signals.discountCodes.length > 0) {
+  if (conditions.noDiscountCode === true && signals.discountCodes.length > 0) return false;
+  if (Array.isArray(conditions.discountCodeIncludes) && !anyIncludes(signals.discountCodes, conditions.discountCodeIncludes)) {
     return false;
   }
-
-  if (
-    Array.isArray(conditions.discountCodeIncludes) &&
-    !anyIncludes(signals.discountCodes, conditions.discountCodeIncludes)
-  ) {
-    return false;
-  }
-
   if (
     Array.isArray(conditions.discountCodeDoesNotInclude) &&
     anyIncludes(signals.discountCodes, conditions.discountCodeDoesNotInclude)
   ) {
     return false;
   }
-
-  if (
-    Array.isArray(conditions.deliveryTitleIncludes) &&
-    !anyIncludes([text], conditions.deliveryTitleIncludes)
-  ) {
+  if (Array.isArray(conditions.deliveryTitleIncludes) && !anyIncludes([text], conditions.deliveryTitleIncludes)) {
     return false;
   }
-
   if (
     Array.isArray(conditions.deliveryTitleDoesNotInclude) &&
     anyIncludes([text], conditions.deliveryTitleDoesNotInclude)
   ) {
     return false;
   }
-
   if (
     typeof conditions.cartTotalQuantityGreaterThan === "number" &&
     !(signals.totalQuantity > conditions.cartTotalQuantityGreaterThan)
   ) {
     return false;
   }
-
   if (
     typeof conditions.cartTotalQuantityLessThanOrEqual === "number" &&
     !(signals.totalQuantity <= conditions.cartTotalQuantityLessThanOrEqual)
   ) {
     return false;
   }
-
-  if (
-    typeof conditions.subtotalGreaterThan === "number" &&
-    !(signals.subtotal > conditions.subtotalGreaterThan)
-  ) {
+  if (typeof conditions.subtotalGreaterThan === "number" && !(signals.subtotal > conditions.subtotalGreaterThan)) {
     return false;
   }
-
-  if (
-    typeof conditions.subtotalLessThan === "number" &&
-    !(signals.subtotal < conditions.subtotalLessThan)
-  ) {
+  if (typeof conditions.subtotalLessThan === "number" && !(signals.subtotal < conditions.subtotalLessThan)) {
     return false;
   }
-
-  if (
-    Array.isArray(conditions.countryCodeIs) &&
-    !lowerList(conditions.countryCodeIs).includes(countryCode)
-  ) {
+  if (Array.isArray(conditions.countryCodeIs) && !lowerList(conditions.countryCodeIs).includes(countryCode)) {
     return false;
   }
-
-  if (
-    Array.isArray(conditions.lineProductTagIncludes) &&
-    !anyIncludes(signals.knownTags, conditions.lineProductTagIncludes)
-  ) {
+  if (Array.isArray(conditions.lineProductTagIncludes) && !anyIncludes(signals.knownTags, conditions.lineProductTagIncludes)) {
     return false;
   }
-
   if (
     Array.isArray(conditions.lineProductTagDoesNotInclude) &&
     anyIncludes(signals.knownTags, conditions.lineProductTagDoesNotInclude)
   ) {
     return false;
   }
-
   if (
     conditions.lineProductTagQuantity &&
     !compareNumber(
@@ -250,58 +170,97 @@ function matchesConditions(rule, signals, deliveryGroup, deliveryOption) {
   return true;
 }
 
-function actionHidesDeliveryOption(action, deliveryOption) {
+function selectorMatches(selector, deliveryOption) {
   const text = optionText(deliveryOption);
 
-  switch (action.type) {
-    case "hideAllDeliveryOptions":
+  switch (selector?.type) {
+    case "allDeliveryOptions":
       return true;
-    case "hideDeliveryOptionsWhereTitleIncludes":
-      return anyIncludes([text], action.values);
-    case "hideDeliveryOptionsWhereTitleDoesNotInclude":
-      return !anyIncludes([text], action.values);
+    case "deliveryOptionsWhereTitleIncludes":
+      return anyIncludes([text], selector.values);
+    case "deliveryOptionsWhereTitleDoesNotInclude":
+      return !anyIncludes([text], selector.values);
     default:
       return false;
   }
 }
 
+function discountValue(discount) {
+  if (discount?.type === "fixedAmount") {
+    return {
+      fixedAmount: {
+        amount: String(discount.amount ?? 0),
+      },
+    };
+  }
+
+  return {
+    percentage: {
+      value: Number(discount?.value ?? 0),
+    },
+  };
+}
+
 function rulesConfig(input) {
-  const config = input.deliveryCustomization?.metafield?.jsonValue;
-  if (config?.version === 1 && Array.isArray(config.rules)) {
+  const config = input.discount?.metafield?.jsonValue;
+  if (config?.version === 1 && Array.isArray(config.shippingDiscounts)) {
     return config;
   }
 
-  return FALLBACK_RULES;
+  return { version: 1, shippingDiscounts: [] };
 }
 
 /**
- * @param {CartDeliveryOptionsTransformRunInput} input
- * @returns {CartDeliveryOptionsTransformRunResult}
+ * @param {CartDeliveryOptionsDiscountsGenerateRunInput} input
+ * @returns {CartDeliveryOptionsDiscountsGenerateRunResult}
  */
-export function cartDeliveryOptionsTransformRun(input) {
-  const operations = [];
-  const hiddenHandles = new Set();
+export function cartDeliveryOptionsDiscountsGenerateRun(input) {
+  if (!input.discount?.discountClasses?.includes("SHIPPING")) {
+    return { operations: [] };
+  }
+
   const config = rulesConfig(input);
   const signals = cartSignals(input);
+  const candidates = [];
 
-  for (const deliveryGroup of input.cart.deliveryGroups) {
-    for (const deliveryOption of deliveryGroup.deliveryOptions) {
-      const shouldHide = config.rules.some((rule) => {
-        if (rule.enabled === false) return false;
-        if (!matchesConditions(rule, signals, deliveryGroup, deliveryOption)) return false;
-        return (rule.actions ?? []).some((action) => actionHidesDeliveryOption(action, deliveryOption));
-      });
+  for (const rule of config.shippingDiscounts) {
+    if (rule.enabled === false) continue;
 
-      if (shouldHide && !hiddenHandles.has(deliveryOption.handle)) {
-        hiddenHandles.add(deliveryOption.handle);
-        operations.push({
-          deliveryOptionHide: {
-            deliveryOptionHandle: deliveryOption.handle,
+    const targets = [];
+    for (const deliveryGroup of input.cart.deliveryGroups) {
+      for (const deliveryOption of deliveryGroup.deliveryOptions) {
+        if (!matchesConditions(rule, signals, deliveryGroup, deliveryOption)) continue;
+        if (!selectorMatches(rule.rateSelector, deliveryOption)) continue;
+
+        targets.push({
+          deliveryOption: {
+            handle: deliveryOption.handle,
           },
         });
       }
     }
+
+    if (targets.length > 0) {
+      candidates.push({
+        message: rule.discount?.message ?? rule.description ?? "",
+        targets,
+        value: discountValue(rule.discount),
+      });
+    }
   }
 
-  return { operations };
+  if (candidates.length === 0) {
+    return { operations: [] };
+  }
+
+  return {
+    operations: [
+      {
+        deliveryDiscountsAdd: {
+          candidates,
+          selectionStrategy: "ALL",
+        },
+      },
+    ],
+  };
 }

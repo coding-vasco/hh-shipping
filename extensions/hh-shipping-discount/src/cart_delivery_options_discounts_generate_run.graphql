@@ -1,0 +1,41 @@
+query CartDeliveryOptionsDiscountsGenerateRunInput {
+  cart {
+    discountCodes: attribute(key: "_hh_discount_codes") {
+      value
+    }
+    cost {
+      subtotalAmount {
+        amount
+      }
+    }
+    lines {
+      quantity
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          product {
+            boxShipping: hasAnyTag(tags: ["box_shipping"])
+            subsBoxMvp: hasAnyTag(tags: ["subs_box_mvp"])
+            bf22Exc: hasAnyTag(tags: ["bf22_exc"])
+          }
+        }
+      }
+    }
+    deliveryGroups {
+      id
+      deliveryAddress {
+        countryCode
+      }
+      deliveryOptions {
+        handle
+        title
+      }
+    }
+  }
+  discount {
+    discountClasses
+    metafield(namespace: "$app:hh-shipping-discount", key: "function-configuration") {
+      jsonValue
+    }
+  }
+}

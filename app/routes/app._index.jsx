@@ -13,6 +13,8 @@ import { authenticate } from "../shopify.server";
 
 const CONFIG_NAMESPACE = "$app:hh-delivery-customization";
 const CONFIG_KEY = "function-configuration";
+const SHIPPING_DISCOUNT_NAMESPACE = "$app:hh-shipping-discount";
+const SHIPPING_DISCOUNT_TITLE = "HH shipping discounts POC";
 
 async function getDeliveryCustomizationId(admin) {
   const response = await admin.graphql(`#graphql
@@ -40,7 +42,7 @@ async function getDeliveryCustomizationId(admin) {
   return preferred.id;
 }
 
-async function publishConfig(admin, config) {
+async function publishDeliveryConfig(admin, config) {
   const ownerId = await getDeliveryCustomizationId(admin);
   const response = await admin.graphql(
     `#graphql
@@ -75,6 +77,100 @@ async function publishConfig(admin, config) {
 
   const json = await response.json();
   const errors = json.data?.metafieldsSet?.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new Error(errors.map((error) => error.message).join("; "));
+  }
+}
+
+function shippingDiscountInput(config) {
+  return {
+    title: SHIPPING_DISCOUNT_TITLE,
+    functionHandle: "hh-shipping-discount",
+    discountClasses: ["SHIPPING"],
+    startsAt: new Date().toISOString(),
+    appliesOnOneTimePurchase: true,
+    appliesOnSubscription: true,
+    combinesWith: {
+      orderDiscounts: true,
+      productDiscounts: true,
+      shippingDiscounts: true,
+    },
+    metafields: [
+      {
+        namespace: SHIPPING_DISCOUNT_NAMESPACE,
+        key: CONFIG_KEY,
+        type: "json",
+        value: JSON.stringify(config),
+      },
+    ],
+  };
+}
+
+async function getShippingDiscountId(admin) {
+  const response = await admin.graphql(`#graphql
+    query ExistingShippingDiscounts {
+      discountNodes(first: 25, query: "type:app AND method:automatic") {
+        nodes {
+          discount {
+            __typename
+            ... on DiscountAutomaticApp {
+              discountId
+              title
+            }
+          }
+        }
+      }
+    }
+  `);
+  const json = await response.json();
+  const nodes = json.data?.discountNodes?.nodes ?? [];
+  const match = nodes.find((node) => node.discount?.title === SHIPPING_DISCOUNT_TITLE);
+  return match?.discount?.discountId ?? null;
+}
+
+async function publishShippingDiscountConfig(admin, config) {
+  if (!Array.isArray(config.shippingDiscounts) || config.shippingDiscounts.length === 0) {
+    return;
+  }
+
+  const existingId = await getShippingDiscountId(admin);
+  const automaticAppDiscount = shippingDiscountInput(config);
+  const mutation = existingId
+    ? `#graphql
+      mutation UpdateShippingDiscount($id: ID!, $automaticAppDiscount: DiscountAutomaticAppInput!) {
+        discountAutomaticAppUpdate(id: $id, automaticAppDiscount: $automaticAppDiscount) {
+          automaticAppDiscount {
+            title
+            status
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `
+    : `#graphql
+      mutation CreateShippingDiscount($automaticAppDiscount: DiscountAutomaticAppInput!) {
+        discountAutomaticAppCreate(automaticAppDiscount: $automaticAppDiscount) {
+          automaticAppDiscount {
+            title
+            status
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+  const response = await admin.graphql(mutation, {
+    variables: existingId ? { id: existingId, automaticAppDiscount } : { automaticAppDiscount },
+  });
+  const json = await response.json();
+  const payload = existingId ? json.data?.discountAutomaticAppUpdate : json.data?.discountAutomaticAppCreate;
+  const errors = payload?.userErrors ?? [];
   if (errors.length > 0) {
     throw new Error(errors.map((error) => error.message).join("; "));
   }
@@ -148,7 +244,8 @@ export const action = async ({ request }) => {
 
   if (intent === "publish") {
     try {
-      await publishConfig(admin, compiled.config);
+      await publishDeliveryConfig(admin, compiled.config);
+      await publishShippingDiscountConfig(admin, compiled.config);
       await db.shippingRulesConfig.update({
         where: { shop: session.shop },
         data: { publishedJson: compiled.json },
@@ -172,7 +269,7 @@ function highlightJson(json) {
     if (match.index > lastIndex) parts.push(json.slice(lastIndex, match.index));
 
     const [token, key, string, literal, number] = match;
-    const color = key ? "#0550ae" : string ? "#0a7f3f" : literal ? "#8250df" : number ? "#953800" : "inherit";
+    const color = key ? "#0550ae" : string ? "#0a7f3f" : literal ? "#cf222e" : number ? "#953800" : "inherit";
     parts.push(
       <span key={`${match.index}-${token}`} style={{ color }}>
         {token}
@@ -187,7 +284,7 @@ function highlightJson(json) {
 
 function highlightDsl(source) {
   const tokenPattern =
-    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(settings|campaigns|HideRates|CodeQualifier|NoDiscountCodeQualifier|CartSubtotalQualifier|CartQuantityQualifier|CartHasItemQualifier|CountryCodeQualifier|ProductTagSelector|RateNameSelector|AllRatesSelector)\b|\b(name|condition|qualifiers|rateSelector|match|codes|names|amount|comparison|selector|tags|productTags|countryCodes|enabled)\b(?=\s*:)|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g;
+    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(settings|campaigns|HideRates|ShippingDiscount|CodeQualifier|NoDiscountCodeQualifier|CartSubtotalQualifier|CartQuantityQualifier|CartHasItemQualifier|CountryCodeQualifier|ProductTagSelector|RateNameSelector|AllRatesSelector|PercentageDiscount|FixedAmountDiscount)\b|\b(name|condition|qualifiers|rateSelector|discount|match|codes|names|amount|percent|message|comparison|selector|tags|productTags|countryCodes|enabled)\b(?=\s*:)|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g;
   const parts = [];
   let lastIndex = 0;
 
@@ -200,7 +297,7 @@ function highlightDsl(source) {
       : string
         ? "#0a7f3f"
         : helper
-          ? "#8250df"
+          ? "#cf222e"
           : key
             ? "#0550ae"
             : literal
@@ -304,11 +401,15 @@ export default function Index() {
 
   const isSubmitting = navigation.state === "submitting";
   const hasLocalChanges = rulesScript !== loaderData.rulesScript;
-  const ruleCount = useMemo(() => {
+  const compiledCounts = useMemo(() => {
     try {
-      return JSON.parse(loaderData.rulesJson).rules?.length ?? 0;
+      const parsed = JSON.parse(loaderData.rulesJson);
+      return {
+        hideRules: parsed.rules?.length ?? 0,
+        shippingDiscounts: parsed.shippingDiscounts?.length ?? 0,
+      };
     } catch {
-      return 0;
+      return { hideRules: 0, shippingDiscounts: 0 };
     }
   }, [loaderData.rulesJson]);
   const previewJson = loaderData.rulesJson;
@@ -333,7 +434,8 @@ export default function Index() {
 
           <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
             <s-stack direction="inline" gap="base">
-              <s-text>Compiled rules: {ruleCount}</s-text>
+              <s-text>Hide rules: {compiledCounts.hideRules}</s-text>
+              <s-text>Shipping discounts: {compiledCounts.shippingDiscounts}</s-text>
               <s-text>Unsaved changes: {hasLocalChanges ? "yes" : "no"}</s-text>
               <s-text>Published: {loaderData.publishedJson ? "yes" : "not yet"}</s-text>
             </s-stack>
@@ -397,6 +499,9 @@ export default function Index() {
         <s-unordered-list>
           <s-list-item>
             <s-text>HideRates: hide matching delivery options.</s-text>
+          </s-list-item>
+          <s-list-item>
+            <s-text>ShippingDiscount: apply a discount to matching delivery options.</s-text>
           </s-list-item>
           <s-list-item>
             <s-text>condition: "all" means every qualifier must match.</s-text>
