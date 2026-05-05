@@ -3,189 +3,16 @@ import { Form, useActionData, useLoaderData, useNavigation } from "react-router"
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
+import {
+  DEFAULT_RULES,
+  DEFAULT_RULES_SCRIPT,
+  compileRulesScript,
+  prettyJson,
+} from "../shipping-rules/compiler.server";
 import { authenticate } from "../shopify.server";
 
 const CONFIG_NAMESPACE = "$app:hh-delivery-customization";
 const CONFIG_KEY = "function-configuration";
-
-const DEFAULT_RULES = {
-  version: 1,
-  rules: [
-    {
-      id: "vip-goldjoy-subscription-only",
-      enabled: true,
-      description: "VIP50/GOLDJOY customers only see subscription delivery options.",
-      conditions: {
-        discountCodeIncludes: ["VIP50", "GOLDJOY"],
-      },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleDoesNotInclude",
-          values: ["subscription"],
-        },
-      ],
-    },
-    {
-      id: "normal-hide-subscription",
-      enabled: true,
-      description: "Non-campaign carts do not see subscription delivery options.",
-      conditions: {
-        noDiscountCode: true,
-      },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleIncludes",
-          values: ["subscription"],
-        },
-      ],
-    },
-    {
-      id: "non-campaign-code-hide-subscription",
-      enabled: true,
-      description: "Discounted carts without VIP50/GOLDJOY do not see subscription delivery options.",
-      conditions: {
-        discountCodeDoesNotInclude: ["VIP50", "GOLDJOY"],
-      },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleIncludes",
-          values: ["subscription"],
-        },
-      ],
-    },
-    {
-      id: "hhcsf-hide-eco",
-      enabled: true,
-      description: "HHCSF hides eco delivery options.",
-      conditions: {
-        discountCodeIncludes: ["HHCSF"],
-      },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleIncludes",
-          values: ["eco"],
-        },
-      ],
-    },
-  ],
-};
-
-function prettyJson(value) {
-  return JSON.stringify(value, null, 2);
-}
-
-function normalizeStringArray(value, path, errors) {
-  if (value === undefined) return;
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
-    errors.push(`${path} must be an array of strings.`);
-  }
-}
-
-function normalizeNumber(value, path, errors) {
-  if (value === undefined) return;
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    errors.push(`${path} must be a number.`);
-  }
-}
-
-function validateRulesConfig(config) {
-  const errors = [];
-  const allowedActions = new Set([
-    "hideDeliveryOptionsWhereTitleIncludes",
-    "hideDeliveryOptionsWhereTitleDoesNotInclude",
-    "hideAllDeliveryOptions",
-  ]);
-
-  if (!config || typeof config !== "object" || Array.isArray(config)) {
-    return ["Config must be a JSON object."];
-  }
-
-  if (config.version !== 1) {
-    errors.push("version must be 1.");
-  }
-
-  if (!Array.isArray(config.rules)) {
-    errors.push("rules must be an array.");
-    return errors;
-  }
-
-  config.rules.forEach((rule, index) => {
-    const prefix = `rules[${index}]`;
-    if (!rule || typeof rule !== "object" || Array.isArray(rule)) {
-      errors.push(`${prefix} must be an object.`);
-      return;
-    }
-
-    if (!rule.id || typeof rule.id !== "string") {
-      errors.push(`${prefix}.id is required and must be a string.`);
-    }
-
-    if (rule.enabled !== undefined && typeof rule.enabled !== "boolean") {
-      errors.push(`${prefix}.enabled must be a boolean when provided.`);
-    }
-
-    if (!rule.conditions || typeof rule.conditions !== "object" || Array.isArray(rule.conditions)) {
-      errors.push(`${prefix}.conditions must be an object.`);
-    } else {
-      normalizeStringArray(rule.conditions.discountCodeIncludes, `${prefix}.conditions.discountCodeIncludes`, errors);
-      normalizeStringArray(
-        rule.conditions.discountCodeDoesNotInclude,
-        `${prefix}.conditions.discountCodeDoesNotInclude`,
-        errors,
-      );
-      normalizeStringArray(rule.conditions.deliveryTitleIncludes, `${prefix}.conditions.deliveryTitleIncludes`, errors);
-      normalizeStringArray(
-        rule.conditions.deliveryTitleDoesNotInclude,
-        `${prefix}.conditions.deliveryTitleDoesNotInclude`,
-        errors,
-      );
-      normalizeStringArray(rule.conditions.lineProductTagIncludes, `${prefix}.conditions.lineProductTagIncludes`, errors);
-      normalizeStringArray(
-        rule.conditions.lineProductTagDoesNotInclude,
-        `${prefix}.conditions.lineProductTagDoesNotInclude`,
-        errors,
-      );
-      normalizeStringArray(rule.conditions.countryCodeIs, `${prefix}.conditions.countryCodeIs`, errors);
-      normalizeNumber(rule.conditions.cartTotalQuantityGreaterThan, `${prefix}.conditions.cartTotalQuantityGreaterThan`, errors);
-      normalizeNumber(
-        rule.conditions.cartTotalQuantityLessThanOrEqual,
-        `${prefix}.conditions.cartTotalQuantityLessThanOrEqual`,
-        errors,
-      );
-      normalizeNumber(rule.conditions.subtotalGreaterThan, `${prefix}.conditions.subtotalGreaterThan`, errors);
-      normalizeNumber(rule.conditions.subtotalLessThan, `${prefix}.conditions.subtotalLessThan`, errors);
-
-      if (rule.conditions.noDiscountCode !== undefined && typeof rule.conditions.noDiscountCode !== "boolean") {
-        errors.push(`${prefix}.conditions.noDiscountCode must be a boolean when provided.`);
-      }
-    }
-
-    if (!Array.isArray(rule.actions) || rule.actions.length === 0) {
-      errors.push(`${prefix}.actions must be a non-empty array.`);
-    } else {
-      rule.actions.forEach((action, actionIndex) => {
-        const actionPrefix = `${prefix}.actions[${actionIndex}]`;
-        if (!action || typeof action !== "object" || Array.isArray(action)) {
-          errors.push(`${actionPrefix} must be an object.`);
-          return;
-        }
-
-        if (!allowedActions.has(action.type)) {
-          errors.push(`${actionPrefix}.type is not supported.`);
-        }
-
-        if (action.type !== "hideAllDeliveryOptions") {
-          normalizeStringArray(action.values, `${actionPrefix}.values`, errors);
-          if (Array.isArray(action.values) && action.values.length === 0) {
-            errors.push(`${actionPrefix}.values must not be empty.`);
-          }
-        }
-      });
-    }
-  });
-
-  return errors;
-}
 
 async function getDeliveryCustomizationId(admin) {
   const response = await admin.graphql(`#graphql
@@ -253,6 +80,14 @@ async function publishConfig(admin, config) {
   }
 }
 
+function compileForServer(source) {
+  try {
+    return { ok: true, ...compileRulesScript(source) };
+  } catch (error) {
+    return { ok: false, message: error.message, json: "" };
+  }
+}
+
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const config = await db.shippingRulesConfig.upsert({
@@ -260,13 +95,26 @@ export const loader = async ({ request }) => {
     update: {},
     create: {
       shop: session.shop,
+      rulesScript: DEFAULT_RULES_SCRIPT,
       rulesJson: prettyJson(DEFAULT_RULES),
     },
   });
 
+  const rulesScript = config.rulesScript ?? DEFAULT_RULES_SCRIPT;
+  const compiled = compileForServer(rulesScript);
+  const rulesJson = compiled.ok ? compiled.json : config.rulesJson;
+
+  if (!config.rulesScript) {
+    await db.shippingRulesConfig.update({
+      where: { shop: session.shop },
+      data: { rulesScript, rulesJson },
+    });
+  }
+
   return {
     shop: session.shop,
-    rulesJson: config.rulesJson,
+    rulesScript,
+    rulesJson,
     publishedJson: config.publishedJson,
     updatedAt: config.updatedAt,
   };
@@ -276,62 +124,84 @@ export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent");
-  const rulesJson = String(formData.get("rulesJson") ?? "");
+  const rulesScript = String(formData.get("rulesScript") ?? "");
 
-  let parsed;
+  let compiled;
   try {
-    parsed = JSON.parse(rulesJson);
+    compiled = compileRulesScript(rulesScript);
   } catch (error) {
-    return { ok: false, message: `Invalid JSON: ${error.message}` };
-  }
-
-  const validationErrors = validateRulesConfig(parsed);
-  if (validationErrors.length > 0) {
-    return { ok: false, message: validationErrors.join("\n") };
+    return { ok: false, message: error.message };
   }
 
   await db.shippingRulesConfig.upsert({
     where: { shop: session.shop },
-    update: { rulesJson: prettyJson(parsed) },
+    update: {
+      rulesScript,
+      rulesJson: compiled.json,
+    },
     create: {
       shop: session.shop,
-      rulesJson: prettyJson(parsed),
+      rulesScript,
+      rulesJson: compiled.json,
     },
   });
 
   if (intent === "publish") {
     try {
-      await publishConfig(admin, parsed);
+      await publishConfig(admin, compiled.config);
       await db.shippingRulesConfig.update({
         where: { shop: session.shop },
-        data: { publishedJson: prettyJson(parsed) },
+        data: { publishedJson: compiled.json },
       });
     } catch (error) {
       return { ok: false, message: error.message };
     }
 
-    return { ok: true, message: "Rules saved and published to the delivery customization." };
+    return { ok: true, message: "Rules compiled, saved, and published to checkout." };
   }
 
-  return { ok: true, message: "Rules saved." };
+  return { ok: true, message: "Rules compiled and saved as a draft." };
 };
+
+function highlightJson(json) {
+  const tokenPattern = /("(?:\\.|[^"\\])*"(?=\s*:))|("(?:\\.|[^"\\])*")|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g;
+  const parts = [];
+  let lastIndex = 0;
+
+  for (const match of json.matchAll(tokenPattern)) {
+    if (match.index > lastIndex) parts.push(json.slice(lastIndex, match.index));
+
+    const [token, key, string, literal, number] = match;
+    const color = key ? "#0550ae" : string ? "#0a7f3f" : literal ? "#8250df" : number ? "#953800" : "inherit";
+    parts.push(
+      <span key={`${match.index}-${token}`} style={{ color }}>
+        {token}
+      </span>,
+    );
+    lastIndex = match.index + token.length;
+  }
+
+  parts.push(json.slice(lastIndex));
+  return parts;
+}
 
 export default function Index() {
   const loaderData = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const shopify = useAppBridge();
-  const [rulesJson, setRulesJson] = useState(loaderData.rulesJson);
+  const [rulesScript, setRulesScript] = useState(loaderData.rulesScript);
 
   const isSubmitting = navigation.state === "submitting";
-  const hasLocalChanges = rulesJson !== loaderData.rulesJson;
-  const parsedRuleCount = useMemo(() => {
+  const hasLocalChanges = rulesScript !== loaderData.rulesScript;
+  const ruleCount = useMemo(() => {
     try {
-      return JSON.parse(rulesJson).rules?.length ?? 0;
+      return JSON.parse(loaderData.rulesJson).rules?.length ?? 0;
     } catch {
       return 0;
     }
-  }, [rulesJson]);
+  }, [loaderData.rulesJson]);
+  const previewJson = loaderData.rulesJson;
 
   useEffect(() => {
     if (actionData?.message) {
@@ -343,16 +213,17 @@ export default function Index() {
 
   return (
     <s-page heading="Shipping Rules">
-      <s-section heading="Store rules">
+      <s-section heading="Campaign script">
         <s-stack gap="base">
           <s-paragraph>
-            Editing rules for <s-text type="emphasis">{loaderData.shop}</s-text>. Conditions inside a rule are
-            combined with AND. Rules are evaluated in order, and matching hide actions are accumulated.
+            Editing rules for <s-text type="emphasis">{loaderData.shop}</s-text>. This script is intentionally small:
+            campaigns create hide-rate rules, qualifiers decide when they apply, and rate selectors decide which delivery
+            options are hidden.
           </s-paragraph>
 
           <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
             <s-stack direction="inline" gap="base">
-              <s-text>Rules: {parsedRuleCount}</s-text>
+              <s-text>Compiled rules: {ruleCount}</s-text>
               <s-text>Unsaved changes: {hasLocalChanges ? "yes" : "no"}</s-text>
               <s-text>Published: {loaderData.publishedJson ? "yes" : "not yet"}</s-text>
             </s-stack>
@@ -361,14 +232,19 @@ export default function Index() {
           <Form method="post">
             <s-stack gap="base">
               <textarea
-                name="rulesJson"
-                value={rulesJson}
-                onChange={(event) => setRulesJson(event.target.value)}
+                name="rulesScript"
+                value={rulesScript}
+                onChange={(event) => setRulesScript(event.target.value)}
                 spellCheck="false"
                 style={{
+                  background: "#fbfbfb",
+                  border: "1px solid #c9cccf",
+                  borderRadius: 6,
                   boxSizing: "border-box",
+                  color: "#1f2124",
                   fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
                   fontSize: 13,
+                  lineHeight: 1.5,
                   minHeight: 520,
                   padding: 16,
                   width: "100%",
@@ -386,7 +262,7 @@ export default function Index() {
                   type="submit"
                   name="intent"
                   value="save"
-                  {...(isSubmitting ? { loading: true } : {})}
+                  {...(isSubmitting ? { disabled: true } : {})}
                 >
                   Save draft
                 </s-button>
@@ -395,7 +271,7 @@ export default function Index() {
                   name="intent"
                   value="publish"
                   variant="primary"
-                  {...(isSubmitting ? { loading: true } : {})}
+                  {...(isSubmitting ? { disabled: true } : {})}
                 >
                   Publish to checkout
                 </s-button>
@@ -405,50 +281,75 @@ export default function Index() {
         </s-stack>
       </s-section>
 
-      <s-section slot="aside" heading="Phase 1 conditions">
+      <s-section heading="Compiled JSON">
+        <pre
+          style={{
+            background: "#f6f8fa",
+            border: "1px solid #d0d7de",
+            borderRadius: 6,
+            color: "#24292f",
+            fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+            fontSize: 12,
+            lineHeight: 1.5,
+            margin: 0,
+            overflowX: "auto",
+            padding: 16,
+            whiteSpace: "pre",
+          }}
+        >
+          {highlightJson(previewJson)}
+        </pre>
+      </s-section>
+
+      <s-section slot="aside" heading="Campaigns">
         <s-unordered-list>
           <s-list-item>
-            <s-text>discountCodeIncludes: string[]</s-text>
+            <s-text>HideRates: hide matching delivery options.</s-text>
           </s-list-item>
           <s-list-item>
-            <s-text>discountCodeDoesNotInclude: string[]</s-text>
+            <s-text>condition: "all" means every qualifier must match.</s-text>
           </s-list-item>
           <s-list-item>
-            <s-text>noDiscountCode: boolean</s-text>
-          </s-list-item>
-          <s-list-item>
-            <s-text>deliveryTitleIncludes / deliveryTitleDoesNotInclude: string[]</s-text>
-          </s-list-item>
-          <s-list-item>
-            <s-text>cartTotalQuantityGreaterThan / cartTotalQuantityLessThanOrEqual: number</s-text>
-          </s-list-item>
-          <s-list-item>
-            <s-text>lineProductTagIncludes / lineProductTagDoesNotInclude: string[]</s-text>
-          </s-list-item>
-          <s-list-item>
-            <s-text>subtotalGreaterThan / subtotalLessThan: number</s-text>
-          </s-list-item>
-          <s-list-item>
-            <s-text>countryCodeIs: string[]</s-text>
+            <s-text>condition: "any" creates one rule per qualifier.</s-text>
           </s-list-item>
         </s-unordered-list>
       </s-section>
 
-      <s-section slot="aside" heading="Phase 1 actions">
+      <s-section slot="aside" heading="Qualifiers">
         <s-unordered-list>
           <s-list-item>
-            <s-text>hideDeliveryOptionsWhereTitleIncludes</s-text>
+            <s-text>CodeQualifier: discount code includes or does not include text.</s-text>
           </s-list-item>
           <s-list-item>
-            <s-text>hideDeliveryOptionsWhereTitleDoesNotInclude</s-text>
+            <s-text>NoDiscountCodeQualifier: cart has no discount code.</s-text>
           </s-list-item>
           <s-list-item>
-            <s-text>hideAllDeliveryOptions</s-text>
+            <s-text>CartSubtotalQualifier: subtotal greater than or less than an amount.</s-text>
+          </s-list-item>
+          <s-list-item>
+            <s-text>CartQuantityQualifier: total cart quantity checks.</s-text>
+          </s-list-item>
+          <s-list-item>
+            <s-text>CartHasItemQualifier: currently supports product tag presence.</s-text>
+          </s-list-item>
+          <s-list-item>
+            <s-text>CountryCodeQualifier: shipping country code checks.</s-text>
+          </s-list-item>
+        </s-unordered-list>
+      </s-section>
+
+      <s-section slot="aside" heading="Selectors">
+        <s-unordered-list>
+          <s-list-item>
+            <s-text>RateNameSelector: matches delivery option title and handle.</s-text>
+          </s-list-item>
+          <s-list-item>
+            <s-text>AllRatesSelector: hides every delivery option.</s-text>
           </s-list-item>
         </s-unordered-list>
         <s-paragraph>
-          Matching is case-insensitive and checks both delivery option title and handle. Current tag support is wired
-          for box_shipping, subs_box_mvp, and bf22_exc.
+          Matching is case-insensitive. Current product tags wired in the function are box_shipping, subs_box_mvp, and
+          bf22_exc.
         </s-paragraph>
       </s-section>
     </s-page>
