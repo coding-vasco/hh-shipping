@@ -5,55 +5,7 @@
  * @typedef {import("../generated/api").CartDeliveryOptionsTransformRunResult} CartDeliveryOptionsTransformRunResult
  */
 
-const FALLBACK_RULES = {
-  version: 1,
-  rules: [
-    {
-      id: "vip-goldjoy-subscription-only",
-      enabled: true,
-      conditions: { discountCodeIncludes: ["VIP50", "GOLDJOY"] },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleDoesNotInclude",
-          values: ["subscription"],
-        },
-      ],
-    },
-    {
-      id: "normal-hide-subscription",
-      enabled: true,
-      conditions: { noDiscountCode: true },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleIncludes",
-          values: ["subscription"],
-        },
-      ],
-    },
-    {
-      id: "non-campaign-hide-subscription",
-      enabled: true,
-      conditions: { discountCodeDoesNotInclude: ["VIP50", "GOLDJOY"] },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleIncludes",
-          values: ["subscription"],
-        },
-      ],
-    },
-    {
-      id: "hhcsf-hide-eco",
-      enabled: true,
-      conditions: { discountCodeIncludes: ["HHCSF"] },
-      actions: [
-        {
-          type: "hideDeliveryOptionsWhereTitleIncludes",
-          values: ["eco"],
-        },
-      ],
-    },
-  ],
-};
+const EMPTY_RULES = { version: 1, rules: [] };
 
 function lower(value) {
   return String(value ?? "").toLowerCase();
@@ -271,7 +223,7 @@ function rulesConfig(input) {
     return config;
   }
 
-  return FALLBACK_RULES;
+  return EMPTY_RULES;
 }
 
 /**

@@ -16,7 +16,23 @@ const CONFIG_KEY = "function-configuration";
 const SHIPPING_DISCOUNT_NAMESPACE = "$app:hh-shipping-discount";
 const SHIPPING_DISCOUNT_TITLE = "HH shipping discounts POC";
 
+function assertNoGraphqlErrors(json) {
+  if (Array.isArray(json.errors) && json.errors.length > 0) {
+    throw new Error(json.errors.map((error) => error.message).join("; "));
+  }
+}
+
 async function getDeliveryCustomizationId(admin) {
+  const preferred = await getDeliveryCustomizationStatus(admin);
+
+  if (!preferred) {
+    throw new Error("No delivery customization exists. Activate the delivery customization before publishing rules.");
+  }
+
+  return preferred.id;
+}
+
+async function getDeliveryCustomizationStatus(admin) {
   const response = await admin.graphql(`#graphql
     query DeliveryCustomizationsForConfig {
       deliveryCustomizations(first: 25) {
@@ -24,22 +40,22 @@ async function getDeliveryCustomizationId(admin) {
           id
           title
           enabled
+          metafield(namespace: "$app:hh-delivery-customization", key: "function-configuration") {
+            id
+          }
         }
       }
     }
   `);
   const json = await response.json();
+  assertNoGraphqlErrors(json);
   const nodes = json.data?.deliveryCustomizations?.nodes ?? [];
   const preferred =
     nodes.find((node) => node.title === "HH delivery customization POC") ??
     nodes.find((node) => node.enabled) ??
     nodes[0];
 
-  if (!preferred) {
-    throw new Error("No delivery customization exists. Activate the delivery customization before publishing rules.");
-  }
-
-  return preferred.id;
+  return preferred ?? null;
 }
 
 async function publishDeliveryConfig(admin, config) {
@@ -76,6 +92,7 @@ async function publishDeliveryConfig(admin, config) {
   );
 
   const json = await response.json();
+  assertNoGraphqlErrors(json);
   const errors = json.data?.metafieldsSet?.userErrors ?? [];
   if (errors.length > 0) {
     throw new Error(errors.map((error) => error.message).join("; "));
@@ -128,6 +145,7 @@ async function getShippingDiscountStatus(admin) {
     }
   `);
   const json = await response.json();
+  assertNoGraphqlErrors(json);
   const nodes = json.data?.discountNodes?.nodes ?? [];
   const match = nodes.find((node) => node.discount?.title === SHIPPING_DISCOUNT_TITLE);
   return match?.discount ?? null;
@@ -175,6 +193,7 @@ async function publishShippingDiscountConfig(admin, config) {
     variables: existingId ? { id: existingId, automaticAppDiscount } : { automaticAppDiscount },
   });
   const json = await response.json();
+  assertNoGraphqlErrors(json);
   const payload = existingId ? json.data?.discountAutomaticAppUpdate : json.data?.discountAutomaticAppCreate;
   const errors = payload?.userErrors ?? [];
   if (errors.length > 0) {
@@ -218,6 +237,7 @@ export const loader = async ({ request }) => {
     rulesScript,
     rulesJson,
     publishedJson: config.publishedJson,
+    deliveryCustomizationStatus: await getDeliveryCustomizationStatus(admin),
     shippingDiscountStatus: await getShippingDiscountStatus(admin),
     updatedAt: config.updatedAt,
   };
@@ -444,6 +464,9 @@ export default function Index() {
               <s-text>Hide rules: {compiledCounts.hideRules}</s-text>
               <s-text>Shipping discounts: {compiledCounts.shippingDiscounts}</s-text>
               <s-text>
+                Delivery config: {loaderData.deliveryCustomizationStatus?.metafield ? "published" : "missing"}
+              </s-text>
+              <s-text>
                 Discount function: {loaderData.shippingDiscountStatus?.status ?? "not active"}
               </s-text>
               <s-text>Unsaved changes: {hasLocalChanges ? "yes" : "no"}</s-text>
@@ -456,6 +479,14 @@ export default function Index() {
               <s-paragraph>
                 Publish to checkout to create the automatic app discount that invokes the HH Shipping Discount
                 function.
+              </s-paragraph>
+            </s-banner>
+          ) : null}
+
+          {!loaderData.deliveryCustomizationStatus?.metafield ? (
+            <s-banner tone="warning" heading="Delivery customization config is missing">
+              <s-paragraph>
+                Checkout is using no published delivery config. Publish to checkout before testing changes.
               </s-paragraph>
             </s-banner>
           ) : null}

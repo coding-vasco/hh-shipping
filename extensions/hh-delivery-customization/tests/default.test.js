@@ -29,7 +29,7 @@ function input({ config = null, discountCodes = [], subtotal = 42, lines = [], d
 }
 
 describe("delivery customization rules", () => {
-  test("fallback normal carts hide subscription delivery options", () => {
+  test("missing config does not hide any delivery options", () => {
     const result = cartDeliveryOptionsTransformRun(
       input({
         deliveryOptions: [
@@ -40,19 +40,29 @@ describe("delivery customization rules", () => {
     );
 
     expect(result).toEqual({
-      operations: [
-        {
-          deliveryOptionHide: {
-            deliveryOptionHandle: "subscription",
-          },
-        },
-      ],
+      operations: [],
     });
   });
 
-  test("fallback subscription campaigns hide non-subscription delivery options", () => {
+  test("published subscription campaigns hide non-subscription delivery options", () => {
     const result = cartDeliveryOptionsTransformRun(
       input({
+        config: {
+          version: 1,
+          rules: [
+            {
+              id: "vip-goldjoy-subscription-only",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["GOLDJOY"] },
+              actions: [
+                {
+                  type: "hideDeliveryOptionsWhereTitleDoesNotInclude",
+                  values: ["subscription"],
+                },
+              ],
+            },
+          ],
+        },
         discountCodes: ["GOLDJOY"],
         deliveryOptions: [
           { handle: "standard", title: "Standard Shipping" },

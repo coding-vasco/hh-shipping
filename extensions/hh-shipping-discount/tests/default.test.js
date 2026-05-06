@@ -54,8 +54,8 @@ describe("shipping discount rules", () => {
           ],
         },
         discountCodes: ["FREESHIP2026"],
-        deliveryOptions: [
-          { handle: "standard", title: "Standard Shipping" },
+      deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping EU" },
           { handle: "express", title: "Express Shipping" },
         ],
       }),
