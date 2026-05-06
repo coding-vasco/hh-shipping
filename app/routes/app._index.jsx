@@ -360,18 +360,18 @@ async function disableCheckoutValidation(admin) {
 }
 
 async function publishCheckoutUiConfig(admin, config) {
-  const installationResponse = await admin.graphql(`#graphql
-    query CurrentAppInstallationForCheckoutUiConfig {
-      currentAppInstallation {
+  const shopResponse = await admin.graphql(`#graphql
+    query ShopForCheckoutUiConfig {
+      shop {
         id
       }
     }
   `);
-  const installationJson = await installationResponse.json();
-  assertNoGraphqlErrors(installationJson);
-  const ownerId = installationJson.data?.currentAppInstallation?.id;
+  const shopJson = await shopResponse.json();
+  assertNoGraphqlErrors(shopJson);
+  const ownerId = shopJson.data?.shop?.id;
   if (!ownerId) {
-    throw new Error("Could not find the current app installation to publish checkout UI messages.");
+    throw new Error("Could not find the shop to publish checkout UI messages.");
   }
 
   const response = await admin.graphql(
