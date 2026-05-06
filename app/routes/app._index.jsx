@@ -495,37 +495,61 @@ export default function Index() {
             <s-stack gap="base">
               <DslEditor value={rulesScript} onChange={setRulesScript} />
 
-              {actionData && !actionData.ok ? (
-                <s-banner tone="critical" heading="Rules could not be saved">
+              {actionData ? (
+                <s-banner
+                  tone={actionData.ok ? "success" : "critical"}
+                  heading={actionData.ok ? "Rules action completed" : "Rules action failed"}
+                >
                   <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{actionData.message}</pre>
                 </s-banner>
               ) : null}
 
               <s-stack direction="inline" gap="base">
-                <s-button
+                <button
                   type="submit"
                   name="intent"
                   value="save"
-                  {...(isSubmitting ? { disabled: true } : {})}
+                  disabled={isSubmitting}
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #8a8a8a",
+                    borderRadius: 6,
+                    color: "#202223",
+                    cursor: isSubmitting ? "default" : "pointer",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    minHeight: 36,
+                    padding: "0 14px",
+                  }}
                 >
                   Save draft
-                </s-button>
-                <s-button
+                </button>
+                <button
                   type="submit"
                   name="intent"
                   value="publish"
-                  variant="primary"
-                  {...(isSubmitting ? { disabled: true } : {})}
+                  disabled={isSubmitting}
+                  style={{
+                    background: "#303030",
+                    border: "1px solid #303030",
+                    borderRadius: 6,
+                    color: "#ffffff",
+                    cursor: isSubmitting ? "default" : "pointer",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    minHeight: 36,
+                    padding: "0 14px",
+                  }}
                 >
                   Publish to checkout
-                </s-button>
+                </button>
               </s-stack>
             </s-stack>
           </Form>
         </s-stack>
       </s-section>
 
-      <s-section heading="Compiled JSON">
+      <s-section heading="Saved compiled JSON">
         <pre
           style={{
             background: "#f6f8fa",
