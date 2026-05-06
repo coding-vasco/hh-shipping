@@ -51,12 +51,20 @@ Run from the repo root in Windows PowerShell.
 git checkout production
 git merge main
 npm run test:rules
+npm run validate:production-rules
 npm run build
 npm exec -- shopify app config use production
 npm exec -- shopify app deploy --allow-updates --message "Production release"
 ```
 
 Render should auto-deploy the `production` branch if the production service is configured to track that branch.
+
+If a production DSL change is intentional, update snapshots before opening the PR:
+
+```powershell
+npm run snapshot:production
+npm run test:rules
+```
 
 ## Per-Store Publishing
 

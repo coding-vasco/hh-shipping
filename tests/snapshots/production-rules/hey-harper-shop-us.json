@@ -1,0 +1,232 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "enabled": true,
+      "description": "VIP50/GOLDJOY subscription only",
+      "actions": [
+        {
+          "type": "hideDeliveryOptionsWhereTitleDoesNotInclude",
+          "values": [
+            "subscription"
+          ]
+        }
+      ],
+      "id": "vip50-goldjoy-subscription-only",
+      "conditions": {
+        "discountCodeIncludes": [
+          "VIP50",
+          "GOLDJOY"
+        ]
+      }
+    },
+    {
+      "enabled": true,
+      "description": "Normal carts hide subscription",
+      "actions": [
+        {
+          "type": "hideDeliveryOptionsWhereTitleIncludes",
+          "values": [
+            "subscription"
+          ]
+        }
+      ],
+      "id": "normal-carts-hide-subscription-1",
+      "conditions": {
+        "discountCodeDoesNotInclude": [
+          "VIP50",
+          "GOLDJOY"
+        ]
+      }
+    },
+    {
+      "enabled": true,
+      "description": "Normal carts hide subscription",
+      "actions": [
+        {
+          "type": "hideDeliveryOptionsWhereTitleIncludes",
+          "values": [
+            "subscription"
+          ]
+        }
+      ],
+      "id": "normal-carts-hide-subscription-2",
+      "conditions": {
+        "noDiscountCode": true
+      }
+    },
+    {
+      "enabled": true,
+      "description": "NOMORERUST hides all shipping at zero subtotal",
+      "actions": [
+        {
+          "type": "hideAllDeliveryOptions"
+        }
+      ],
+      "id": "nomorerust-hides-all-shipping-at-zero-subtotal",
+      "conditions": {
+        "discountCodeIncludes": [
+          "NOMORERUST"
+        ],
+        "subtotal": {
+          "comparison": "equal_to",
+          "amount": 0
+        }
+      }
+    }
+  ],
+  "shippingDiscounts": [
+    {
+      "enabled": true,
+      "description": "Subscription free standard shipping",
+      "rateSelector": {
+        "type": "deliveryOptionsWhereTitleIncludes",
+        "values": [
+          "standard"
+        ]
+      },
+      "discount": {
+        "type": "percentage",
+        "value": 100,
+        "message": "Free Shipping"
+      },
+      "id": "subscription-free-standard-shipping",
+      "conditions": {
+        "lineProductTagQuantity": {
+          "comparison": "greater_than_or_equal",
+          "amount": 1,
+          "match": "match",
+          "tags": [
+            "subs_box_mvp"
+          ]
+        }
+      }
+    },
+    {
+      "enabled": true,
+      "description": "Free standard shipping by code",
+      "rateSelector": {
+        "type": "deliveryOptionsWhereTitleIncludes",
+        "values": [
+          "Standard"
+        ]
+      },
+      "discount": {
+        "type": "percentage",
+        "value": 100,
+        "message": "Free Shipping"
+      },
+      "id": "free-standard-shipping-by-code",
+      "conditions": {
+        "discountCodeIncludes": [
+          "INFL1PREMIUM",
+          "INFL2PREMIUM",
+          "INFL3PREMIUM",
+          "HHCSD",
+          "HHCSF",
+          "FREESETPC",
+          "HEYHARPERINTERVIEW",
+          "HHCSTEST",
+          "VIP50"
+        ]
+      }
+    },
+    {
+      "enabled": true,
+      "description": "Free priority for 5 qualifying items",
+      "rateSelector": {
+        "type": "deliveryOptionsWhereTitleIncludes",
+        "values": [
+          "Priority",
+          "Prioritaire"
+        ]
+      },
+      "discount": {
+        "type": "percentage",
+        "value": 100,
+        "message": "Free Priority Handling (3+ Items)"
+      },
+      "id": "free-priority-for-5-qualifying-items",
+      "conditions": {
+        "lineProductTagQuantity": {
+          "comparison": "greater_than_or_equal",
+          "amount": 5,
+          "match": "does_not_match",
+          "tags": [
+            "bf22_exc"
+          ]
+        }
+      }
+    },
+    {
+      "enabled": true,
+      "description": "HHINFEMMA free express",
+      "rateSelector": {
+        "type": "deliveryOptionsWhereTitleIncludes",
+        "values": [
+          "Express"
+        ]
+      },
+      "discount": {
+        "type": "percentage",
+        "value": 100,
+        "message": "Free Express Shipping"
+      },
+      "id": "hhinfemma-free-express",
+      "conditions": {
+        "discountCodeIncludes": [
+          "HHINFEMMA"
+        ]
+      }
+    },
+    {
+      "enabled": true,
+      "description": "Influencer free priority",
+      "rateSelector": {
+        "type": "deliveryOptionsWhereTitleIncludes",
+        "values": [
+          "Priority",
+          "Prioritaire"
+        ]
+      },
+      "discount": {
+        "type": "percentage",
+        "value": 100,
+        "message": "Free Priority Handling"
+      },
+      "id": "influencer-free-priority",
+      "conditions": {
+        "discountCodeIncludes": [
+          "AMALIESUMMER23",
+          "EVASUMMER23",
+          "LAINEYSUMMER23",
+          "CADSUMMER23",
+          "DEARSJANA",
+          "HEYSJANA",
+          "HEYEVAMELOCHE",
+          "HEYAMALIE",
+          "KNOWMEBETTER"
+        ]
+      }
+    }
+  ],
+  "validations": [
+    {
+      "enabled": true,
+      "description": "NOMORERUST requires paid jewelry",
+      "messageTitle": "Discount code requires a paid item",
+      "message": "NOMORERUST must be used with at least one paid jewelry item.",
+      "target": "$.cart",
+      "id": "nomorerust-requires-paid-jewelry",
+      "conditions": {
+        "discountCodeIncludes": [
+          "NOMORERUST"
+        ],
+        "subtotal": {
+          "comparison": "equal_to",
+          "amount": 0
+        }
+      }
+    }
+  ]
+}
