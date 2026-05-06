@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 import { DEFAULT_RULES_SCRIPT, compileRulesScript } from "../app/shipping-rules/compiler.server.js";
 
@@ -114,5 +115,42 @@ describe("shipping rules DSL compiler", () => {
         `),
       /new_ops_tag/,
     );
+  });
+
+  test("compiles the EU Script Editor campaign set", () => {
+    const source = readFileSync(new URL("../docs/eu-shipping-rules-phase-1.dsl.js", import.meta.url), "utf8");
+    const { config } = compileRulesScript(source);
+
+    assert.equal(config.shippingDiscounts.length, 5);
+    assert.equal(config.rules.length, 5);
+    assert.equal(config.shippingDiscounts[1].description, "Free priority by code or quantity");
+    assert.deepEqual(config.shippingDiscounts[1].conditions.discountCodeIncludes, [
+      "DEAR",
+      "HHXGYMSHARK",
+      "HHXPVOLVE",
+      "ANNASTRUP",
+      "MADIE",
+      "RDY2MINGLE",
+      "HEYSJANA",
+      "HEYAMALIE",
+      "HEYEVAMELOCHE",
+      "KNOWMEBETTER",
+      "SPINWIN_FS",
+    ]);
+    assert.deepEqual(config.shippingDiscounts[2].conditions.lineProductTagQuantity, {
+      comparison: "greater_than_or_equal",
+      amount: 5,
+      match: "does_not_match",
+      tags: ["bf22_exc"],
+    });
+    assert.deepEqual(config.shippingDiscounts[4].conditions, {
+      lineProductTagQuantity: {
+        comparison: "greater_than_or_equal",
+        amount: 1,
+        match: "match",
+        tags: ["box_shipping"],
+      },
+      subtotalGreaterThan: 16,
+    });
   });
 });

@@ -197,6 +197,8 @@ FixedAmountDiscount({ amount: 5, message: "5 Off Shipping" })
 
 ## Working Examples
 
+The full EU Script Editor migration example lives at `docs/eu-shipping-rules-phase-1.dsl.js`.
+
 ### HHCSF Hides Eco
 
 ```js
