@@ -2,7 +2,7 @@
 # Before using this config, replace client_id with the Client ID from the
 # production Shopify app in the Hey Harper Trading dev dashboard.
 
-client_id = "REPLACE_WITH_PRODUCTION_CLIENT_ID"
+client_id = "8ed6dde7727a8388aa3f5e00143d1433"
 name = "HH Shipping Rules"
 application_url = "https://hh-shipping-rules.onrender.com"
 embedded = true
