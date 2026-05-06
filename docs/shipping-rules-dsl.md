@@ -174,6 +174,10 @@ Use this carefully. It should generally be paired with a clear checkout message 
 
 Use these inside `ShippingDiscount({ discount: ... })`.
 
+Shipping discounts require an active automatic app discount in Shopify. The app creates or updates this when you click **Publish to checkout**. If the app only has a saved draft, the Delivery Customization rules might still work from an older published config, but shipping discounts will not run.
+
+If a shipping discount is triggered by a discount code, the existing Shopify discount code must be allowed to combine with shipping discounts. Shopify Functions respect Shopify's discount-combination rules.
+
 ### Percentage Discount
 
 ```js

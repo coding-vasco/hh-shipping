@@ -106,7 +106,7 @@ function shippingDiscountInput(config) {
   };
 }
 
-async function getShippingDiscountId(admin) {
+async function getShippingDiscountStatus(admin) {
   const response = await admin.graphql(`#graphql
     query ExistingShippingDiscounts {
       discountNodes(first: 25, query: "type:app AND method:automatic") {
@@ -116,6 +116,11 @@ async function getShippingDiscountId(admin) {
             ... on DiscountAutomaticApp {
               discountId
               title
+              status
+              appDiscountType {
+                functionId
+                title
+              }
             }
           }
         }
@@ -125,7 +130,7 @@ async function getShippingDiscountId(admin) {
   const json = await response.json();
   const nodes = json.data?.discountNodes?.nodes ?? [];
   const match = nodes.find((node) => node.discount?.title === SHIPPING_DISCOUNT_TITLE);
-  return match?.discount?.discountId ?? null;
+  return match?.discount ?? null;
 }
 
 async function publishShippingDiscountConfig(admin, config) {
@@ -133,7 +138,8 @@ async function publishShippingDiscountConfig(admin, config) {
     return;
   }
 
-  const existingId = await getShippingDiscountId(admin);
+  const existing = await getShippingDiscountStatus(admin);
+  const existingId = existing?.discountId ?? null;
   const automaticAppDiscount = shippingDiscountInput(config);
   const mutation = existingId
     ? `#graphql
@@ -185,7 +191,7 @@ function compileForServer(source) {
 }
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const config = await db.shippingRulesConfig.upsert({
     where: { shop: session.shop },
     update: {},
@@ -212,6 +218,7 @@ export const loader = async ({ request }) => {
     rulesScript,
     rulesJson,
     publishedJson: config.publishedJson,
+    shippingDiscountStatus: await getShippingDiscountStatus(admin),
     updatedAt: config.updatedAt,
   };
 };
@@ -436,10 +443,22 @@ export default function Index() {
             <s-stack direction="inline" gap="base">
               <s-text>Hide rules: {compiledCounts.hideRules}</s-text>
               <s-text>Shipping discounts: {compiledCounts.shippingDiscounts}</s-text>
+              <s-text>
+                Discount function: {loaderData.shippingDiscountStatus?.status ?? "not active"}
+              </s-text>
               <s-text>Unsaved changes: {hasLocalChanges ? "yes" : "no"}</s-text>
               <s-text>Published: {loaderData.publishedJson ? "yes" : "not yet"}</s-text>
             </s-stack>
           </s-box>
+
+          {compiledCounts.shippingDiscounts > 0 && !loaderData.shippingDiscountStatus ? (
+            <s-banner tone="warning" heading="Shipping discount is not active">
+              <s-paragraph>
+                Publish to checkout to create the automatic app discount that invokes the HH Shipping Discount
+                function.
+              </s-paragraph>
+            </s-banner>
+          ) : null}
 
           <Form method="post">
             <s-stack gap="base">
