@@ -18,6 +18,7 @@ const SHIPPING_DISCOUNT_NAMESPACE = "$app:hh-shipping-discount";
 const SHIPPING_DISCOUNT_TITLE = "HH shipping discounts POC";
 const CHECKOUT_VALIDATION_NAMESPACE = "$app:hh-checkout-validation";
 const CHECKOUT_VALIDATION_TITLE = "HH checkout validation POC";
+const CHECKOUT_UI_NAMESPACE = "$app:hh-checkout-ui";
 
 function assertNoGraphqlErrors(json) {
   if (Array.isArray(json.errors) && json.errors.length > 0) {
@@ -358,6 +359,60 @@ async function disableCheckoutValidation(admin) {
   }
 }
 
+async function publishCheckoutUiConfig(admin, config) {
+  const installationResponse = await admin.graphql(`#graphql
+    query CurrentAppInstallationForCheckoutUiConfig {
+      currentAppInstallation {
+        id
+      }
+    }
+  `);
+  const installationJson = await installationResponse.json();
+  assertNoGraphqlErrors(installationJson);
+  const ownerId = installationJson.data?.currentAppInstallation?.id;
+  if (!ownerId) {
+    throw new Error("Could not find the current app installation to publish checkout UI messages.");
+  }
+
+  const response = await admin.graphql(
+    `#graphql
+      mutation PublishCheckoutUiConfig($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          metafields {
+            id
+            namespace
+            key
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      variables: {
+        metafields: [
+          {
+            ownerId,
+            namespace: CHECKOUT_UI_NAMESPACE,
+            key: CONFIG_KEY,
+            type: "json",
+            value: JSON.stringify(config),
+          },
+        ],
+      },
+    },
+  );
+
+  const json = await response.json();
+  assertNoGraphqlErrors(json);
+  const errors = json.data?.metafieldsSet?.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new Error(errors.map((error) => error.message).join("; "));
+  }
+}
+
 function compileForServer(source) {
   try {
     return { ok: true, ...compileRulesScript(source) };
@@ -435,6 +490,7 @@ export const action = async ({ request }) => {
     await publishDeliveryConfig(admin, compiled.config);
     await publishShippingDiscountConfig(admin, compiled.config);
     await publishCheckoutValidationConfig(admin, compiled.config);
+    await publishCheckoutUiConfig(admin, compiled.config);
     await db.shippingRulesConfig.update({
       where: { shop: session.shop },
       data: { publishedJson: compiled.json },
@@ -470,7 +526,7 @@ function highlightJson(json) {
 
 function highlightDsl(source) {
   const tokenPattern =
-    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(settings|campaigns|HideRates|ShippingDiscount|CartValidation|CodeQualifier|NoDiscountCodeQualifier|CartSubtotalQualifier|CartQuantityQualifier|CartHasItemQualifier|CountryCodeQualifier|ProductTagSelector|RateNameSelector|AllRatesSelector|PercentageDiscount|FixedAmountDiscount)\b|\b(name|condition|qualifiers|rateSelector|discount|match|codes|names|amount|percent|message|target|comparison|selector|tags|productTags|countryCodes|enabled)\b(?=\s*:)|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g;
+    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(settings|campaigns|HideRates|ShippingDiscount|CartValidation|CodeQualifier|NoDiscountCodeQualifier|CartSubtotalQualifier|CartQuantityQualifier|CartHasItemQualifier|CountryCodeQualifier|ProductTagSelector|RateNameSelector|AllRatesSelector|PercentageDiscount|FixedAmountDiscount)\b|\b(name|condition|qualifiers|rateSelector|discount|match|codes|names|amount|percent|message|message_title|messageTitle|target|comparison|selector|tags|productTags|countryCodes|enabled)\b(?=\s*:)|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g;
   const parts = [];
   let lastIndex = 0;
 

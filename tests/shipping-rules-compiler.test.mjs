@@ -95,6 +95,29 @@ describe("shipping rules DSL compiler", () => {
     });
   });
 
+  test("compiles a cart validation message title", () => {
+    const { config } = compileRulesScript(`
+      settings({ productTags: ["box_shipping"] });
+      campaigns([
+        CartValidation({
+          name: "NOMORERUST requires paid jewelry",
+          condition: "all",
+          qualifiers: [
+            CodeQualifier({ match: "include", codes: ["NOMORERUST"] }),
+            CartSubtotalQualifier({ comparison: "equal_to", amount: 0 }),
+          ],
+          message_title: "Discount code requires a paid item",
+          message: "NOMORERUST must be used with at least one paid jewelry item.",
+          target: "$.cart",
+        }),
+      ]);
+    `);
+
+    assert.equal(config.validations.length, 1);
+    assert.equal(config.validations[0].messageTitle, "Discount code requires a paid item");
+    assert.equal(config.validations[0].message, "NOMORERUST must be used with at least one paid jewelry item.");
+  });
+
 
   test("rejects product tags that are not wired in the function input query", () => {
     assert.throws(
@@ -127,6 +150,7 @@ describe("shipping rules DSL compiler", () => {
     assert.equal(config.shippingDiscounts.length, 5);
     assert.equal(config.rules.length, 6);
     assert.equal(config.validations.length, 1);
+    assert.equal(config.validations[0].messageTitle, "Discount code requires a paid item");
     assert.equal(config.shippingDiscounts[1].description, "Free priority by code or quantity");
     assert.deepEqual(config.shippingDiscounts[1].conditions.discountCodeIncludes, [
       "DEAR",

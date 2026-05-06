@@ -174,6 +174,7 @@ campaigns([
       CodeQualifier({ match: "include", codes: ["NOMORERUST"] }),
       CartSubtotalQualifier({ comparison: "equal_to", amount: 0 }),
     ],
+    message_title: "Discount code requires a paid item",
     message: "NOMORERUST must be used with at least one paid jewelry item.",
     target: "$.cart",
   }),

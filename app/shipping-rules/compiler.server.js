@@ -401,9 +401,11 @@ function compileCartValidationCampaign(campaign, index, errors) {
     errors.push(`${path}.message is required.`);
   }
 
+  const messageTitle = String(campaign.message_title ?? campaign.messageTitle ?? "").trim();
   const base = {
     enabled: campaign.enabled !== false,
     description: String(campaign.name ?? ""),
+    ...(messageTitle ? { messageTitle } : {}),
     message,
     target: String(campaign.target ?? "$.cart"),
   };

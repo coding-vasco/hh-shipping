@@ -34,8 +34,8 @@ api_access = true
 # https://shopify.dev/docs/api/checkout-ui-extensions/latest/configuration#metafields
 
 [[extensions.metafields]]
-namespace = "$app"
-key = "requestedFreeGift"
+namespace = "$app:hh-checkout-ui"
+key = "function-configuration"
 
 # Defines settings that will be collected from merchants installing
 # your extension. Learn more:

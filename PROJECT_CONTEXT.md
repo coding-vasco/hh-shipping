@@ -19,6 +19,7 @@ The MVP centralizes shipping behavior in a Shopify app with a small JavaScript-l
 
 - Checkout UI Extension: reads applied checkout discount codes and writes them into cart attributes, especially `_hh_discount_codes`. This is needed because Delivery Customization Function input does not expose `cart.discountCodes`.
 - Checkout UI Extension also renders the NOMORERUST warning banner when the app block is placed near shipping methods and the cart has code `NOMORERUST` with subtotal `0`.
+- The inline Checkout UI warning reads the published DSL config from app-owned metafield `$app:hh-checkout-ui/function-configuration`; `CartValidation.message_title` controls the banner heading and `CartValidation.message` controls the banner body.
 - Delivery Customization Function: reads `_hh_discount_codes`, cart data, delivery option title/handle, product tag booleans, and a delivery customization metafield config. It handles `HideRates` campaigns.
 - Discount Function: reads `_hh_discount_codes`, cart data, delivery option title/handle, product tag booleans, and its automatic app discount metafield config. It handles `ShippingDiscount` campaigns.
 - Cart and Checkout Validation Function: reads `_hh_discount_codes`, cart subtotal, product tag booleans, and its validation metafield config. It handles `CartValidation` campaigns such as NOMORERUST checkout blocking messages.
@@ -83,7 +84,7 @@ Shipping discount activation note: Shopify rejected `combinesWith.shippingDiscou
 NOMORERUST v1 behavior:
 
 - `HideRates` can hide all rates when code includes `NOMORERUST` and subtotal equals `0`.
-- `CartValidation` can block checkout and show `NOMORERUST must be used with at least one paid jewelry item.` at `$.cart`.
+- `CartValidation` can block checkout and show `NOMORERUST must be used with at least one paid jewelry item.` at `$.cart`; its `message_title` is used by the inline app-block banner near shipping methods.
 - Shopify controls exact validation-message placement. The Checkout UI Extension shows the same message inline wherever the block is placed.
 
 Store example DSL files:

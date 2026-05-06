@@ -26,6 +26,8 @@ CartValidation({ ... })
 
 `CartValidation` shows a blocking checkout message when its qualifiers match the cart. This campaign type is powered by the Shopify Cart and Checkout Validation Function.
 
+`message_title` controls the heading shown by the Checkout UI Extension banner when the app block is placed near shipping methods. `message` controls both that banner body and the Shopify blocking validation message.
+
 ## File Shape
 
 Every script should follow this shape:
@@ -43,6 +45,7 @@ campaigns([
       CodeQualifier({ match: "include", codes: ["NOMORERUST"] }),
       CartSubtotalQualifier({ comparison: "equal_to", amount: 0 }),
     ],
+    message_title: "Discount code requires a paid item",
     message: "NOMORERUST must be used with at least one paid jewelry item.",
     target: "$.cart",
   }),
@@ -330,6 +333,7 @@ CartValidation({
     CodeQualifier({ match: "include", codes: ["NOMORERUST"] }),
     CartSubtotalQualifier({ comparison: "equal_to", amount: 0 }),
   ],
+  message_title: "Discount code requires a paid item",
   message: "NOMORERUST must be used with at least one paid jewelry item.",
   target: "$.cart",
 })
@@ -348,7 +352,7 @@ NOMORERUST must be used with at least one paid jewelry item.
 Use a prompt like this:
 
 ```txt
-I am editing HH Shipping Rules DSL. Do not use arbitrary JavaScript, loops, variables, or custom functions. Only use settings(), campaigns(), HideRates(), ShippingDiscount(), CartValidation(), CodeQualifier(), NoDiscountCodeQualifier(), CartSubtotalQualifier(), CartQuantityQualifier(), CartHasItemQualifier(), ProductTagSelector(), CountryCodeQualifier(), RateNameSelector(), AllRatesSelector(), PercentageDiscount(), and FixedAmountDiscount().
+I am editing HH Shipping Rules DSL. Do not use arbitrary JavaScript, loops, variables, or custom functions. Only use settings(), campaigns(), HideRates(), ShippingDiscount(), CartValidation(), CodeQualifier(), NoDiscountCodeQualifier(), CartSubtotalQualifier(), CartQuantityQualifier(), CartHasItemQualifier(), ProductTagSelector(), CountryCodeQualifier(), RateNameSelector(), AllRatesSelector(), PercentageDiscount(), and FixedAmountDiscount(). CartValidation can use message_title for the inline checkout banner heading and message for the blocking message/body.
 
 Create a campaign that [describe the business rule]. Use condition "all" when every qualifier must match and "any" when any qualifier can match. Match discount codes and rate names case-insensitively by text inclusion.
 ```
