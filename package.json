@@ -1,5 +1,5 @@
 {
-  "name": "hh-shipping-poc",
+  "name": "hh-shipping-rules",
   "private": true,
   "scripts": {
     "build": "react-router build",

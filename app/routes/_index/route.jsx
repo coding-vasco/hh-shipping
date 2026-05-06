@@ -18,9 +18,9 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>A short heading about [your app]</h1>
+        <h1 className={styles.heading}>HH Shipping Rules</h1>
         <p className={styles.text}>
-          A tagline about [your app] that describes your value proposition.
+          Internal shipping campaign tooling for Hey Harper stores.
         </p>
         {showForm && (
           <Form className={styles.form} method="post" action="/auth/login">
@@ -36,16 +36,16 @@ export default function App() {
         )}
         <ul className={styles.list}>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Hide rates</strong>. Hide delivery options based on discount
+            codes, cart conditions, item tags, and shipping destination.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Shipping discounts</strong>. Apply configured free or reduced
+            shipping campaigns.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Checkout validation</strong>. Block invalid shipping campaign
+            combinations with customer-facing messages.
           </li>
         </ul>
       </div>

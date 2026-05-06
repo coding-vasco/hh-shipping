@@ -1,0 +1,33 @@
+# Production config for HH Shipping Rules.
+# Before using this config, replace client_id with the Client ID from the
+# production Shopify app in the Hey Harper Trading dev dashboard.
+
+client_id = "REPLACE_WITH_PRODUCTION_CLIENT_ID"
+name = "HH Shipping Rules"
+application_url = "https://hh-shipping-rules.onrender.com"
+embedded = true
+
+[access_scopes]
+scopes = "read_delivery_customizations,write_delivery_customizations,read_discounts,write_discounts,read_validations,write_validations"
+
+[webhooks]
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+[auth]
+redirect_urls = [
+  "https://hh-shipping-rules.onrender.com/auth/callback",
+  "https://hh-shipping-rules.onrender.com/auth/shopify/callback",
+  "https://hh-shipping-rules.onrender.com/api/auth/callback",
+  "https://hh-shipping-rules.onrender.com/api/auth"
+]
+
+[build]
+automatically_update_urls_on_dev = false

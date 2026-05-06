@@ -6,7 +6,7 @@
 api_version = "2026-04"
 
 [[extensions]]
-name = "HH-DISCONT-ATTRIBUTE-WRITER"
+name = "HH Shipping Rules"
 handle = "hh-discont-attribute-writer"
 type = "ui_extension"
 uid = "c07b1b2c-7fe9-93bb-fc47-56d746e89b74dad38b86"

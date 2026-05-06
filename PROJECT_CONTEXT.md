@@ -7,15 +7,27 @@ This file is for Codex continuity. Keep it short, factual, and updated when the 
 - Repo: `https://github.com/coding-vasco/hh-shipping`
 - Local path: `C:\Users\Convidado\Documents\Codex\2026-05-04\hh-shipping-poc`
 - Branch: `main`
-- Render URL: `https://hh-shipping.onrender.com`
+- Dev Render URL: `https://hh-shipping.onrender.com`
+- Planned production Render URL: `https://hh-shipping-rules.onrender.com`
 - Render service ID: `srv-d7t5h5egvqtc73ab0u4g`
 - Shopify organization: Hey Harper Trading
 - Shopify app: `hh-shipping-poc`
 - Test store: `grace-handmade-jewelry.myshopify.com`
+- Production stores:
+  - `hey-harper-shop-us.myshopify.com`
+  - `hey-harper-shop-uk.myshopify.com`
+  - `hey-harper-shop-nl.myshopify.com`
 
 ## Architecture
 
 The MVP centralizes shipping behavior in a Shopify app with a small JavaScript-like DSL edited in the embedded app.
+
+Production preparation:
+
+- Keep `main` as the development branch/app tested on Grace.
+- Use a separate `production` branch/app/Render service for the real stores.
+- Production Shopify config lives in `shopify.app.production.toml` and should be filled with the production app Client ID before use.
+- Prisma uses `DATABASE_URL`; dev can use `file:./dev.sqlite`, production should use a Render persistent disk path such as `file:/var/data/prod.sqlite`.
 
 - Checkout UI Extension: reads applied checkout discount codes and writes them into cart attributes, especially `_hh_discount_codes`. This is needed because Delivery Customization Function input does not expose `cart.discountCodes`.
 - Checkout UI Extension also renders the NOMORERUST warning banner when the app block is placed near shipping methods and the cart has code `NOMORERUST` with subtotal `0`.

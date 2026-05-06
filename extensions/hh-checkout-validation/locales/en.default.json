@@ -1,4 +1,4 @@
 {
-  "name": "hh-checkout-validation",
-  "description": "hh-checkout-validation"
+  "name": "HH Checkout Validation",
+  "description": "Blocks checkout when configured shipping rule validations fail."
 }
