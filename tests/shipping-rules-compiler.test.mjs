@@ -8,10 +8,9 @@ describe("shipping rules DSL compiler", () => {
     const { config } = compileRulesScript(DEFAULT_RULES_SCRIPT);
 
     assert.equal(config.version, 1);
-    assert.equal(config.rules.length, 4);
-    assert.equal(config.shippingDiscounts.length, 1);
-    assert.equal(config.rules[0].conditions.discountCodeIncludes[0], "VIP50");
-    assert.equal(config.rules[0].actions[0].type, "hideDeliveryOptionsWhereTitleDoesNotInclude");
+    assert.deepEqual(config.rules, []);
+    assert.deepEqual(config.shippingDiscounts, []);
+    assert.deepEqual(config.validations, []);
   });
 
   test("expands any-condition campaigns into separate rules", () => {

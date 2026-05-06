@@ -2,58 +2,15 @@ import vm from "node:vm";
 
 const SUPPORTED_PRODUCT_TAGS = new Set(["box_shipping", "subs_box_mvp", "bf22_exc"]);
 
-export const DEFAULT_RULES_SCRIPT = `// HH shipping rules Phase 1
-// Product tags must also be wired in the Delivery Customization Function input query.
+export const DEFAULT_RULES_SCRIPT = `// HH shipping rules
+// Default state is intentionally empty and fail-open.
+// Paste a store-specific DSL and click Save and publish to activate campaigns.
+// Product tags must also be wired in the Shopify Function input queries.
 settings({
   productTags: ["box_shipping", "subs_box_mvp", "bf22_exc"],
 });
 
-campaigns([
-  ShippingDiscount({
-    name: "Subscription free standard shipping",
-    condition: "all",
-    qualifiers: [
-      CartHasItemQualifier({
-        comparison: "greater_than_or_equal",
-        amount: 1,
-        selector: ProductTagSelector({ match: "match", tags: ["subs_box_mvp"] }),
-      }),
-    ],
-    rateSelector: RateNameSelector({ match: "include", names: ["standard"] }),
-    discount: PercentageDiscount({ percent: 100, message: "Free Shipping" }),
-  }),
-
-  HideRates({
-    name: "VIP50/GOLDJOY subscription only",
-    condition: "all",
-    qualifiers: [
-      CodeQualifier({ match: "include", codes: ["VIP50", "GOLDJOY"] }),
-    ],
-    rateSelector: RateNameSelector({
-      match: "does_not_include",
-      names: ["subscription"],
-    }),
-  }),
-
-  HideRates({
-    name: "Normal carts hide subscription",
-    condition: "any",
-    qualifiers: [
-      NoDiscountCodeQualifier(),
-      CodeQualifier({ match: "does_not_include", codes: ["VIP50", "GOLDJOY"] }),
-    ],
-    rateSelector: RateNameSelector({ match: "include", names: ["subscription"] }),
-  }),
-
-  HideRates({
-    name: "HHCSF hides eco",
-    condition: "all",
-    qualifiers: [
-      CodeQualifier({ match: "include", codes: ["HHCSF"] }),
-    ],
-    rateSelector: RateNameSelector({ match: "include", names: ["eco"] }),
-  }),
-]);`;
+campaigns([]);`;
 
 export const DEFAULT_RULES = compileRulesScript(DEFAULT_RULES_SCRIPT).config;
 
