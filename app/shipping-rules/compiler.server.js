@@ -87,6 +87,7 @@ function createDslContext() {
     },
     HideRates: (input) => descriptor("HideRates", input),
     ShippingDiscount: (input) => descriptor("ShippingDiscount", input),
+    CartValidation: (input) => descriptor("CartValidation", input),
     CodeQualifier: (input) => descriptor("CodeQualifier", input),
     NoDiscountCodeQualifier: (input = {}) => descriptor("NoDiscountCodeQualifier", input),
     CartQuantityQualifier: (input) => descriptor("CartQuantityQualifier", input),
@@ -164,19 +165,22 @@ function compileQualifier(qualifier, path, errors) {
     case "CartQuantityQualifier": {
       const comparison = assertMatch(
         qualifier.comparison,
-        ["greater_than", "less_than_or_equal"],
+        ["greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal", "equal_to"],
         `${path}.comparison`,
         errors,
       );
       const amount = assertNumber(qualifier.amount, `${path}.amount`, errors);
-      return comparison === "greater_than"
-        ? { cartTotalQuantityGreaterThan: amount }
-        : { cartTotalQuantityLessThanOrEqual: amount };
+      return { cartTotalQuantity: { comparison, amount } };
     }
     case "CartSubtotalQualifier": {
-      const comparison = assertMatch(qualifier.comparison, ["greater_than", "less_than"], `${path}.comparison`, errors);
+      const comparison = assertMatch(
+        qualifier.comparison,
+        ["greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal", "equal_to"],
+        `${path}.comparison`,
+        errors,
+      );
       const amount = assertNumber(qualifier.amount, `${path}.amount`, errors);
-      return comparison === "greater_than" ? { subtotalGreaterThan: amount } : { subtotalLessThan: amount };
+      return { subtotal: { comparison, amount } };
     }
     case "CountryCodeQualifier": {
       assertMatch(qualifier.match ?? "one_of", ["one_of"], `${path}.match`, errors);
@@ -384,9 +388,52 @@ function compileShippingDiscountCampaign(campaign, index, errors) {
   ];
 }
 
+function compileCartValidationCampaign(campaign, index, errors) {
+  const path = `campaigns[${index}]`;
+  const condition = assertMatch(campaign.condition ?? "all", ["all", "any"], `${path}.condition`, errors);
+  const qualifiers = Array.isArray(campaign.qualifiers) ? campaign.qualifiers : [];
+  if (qualifiers.length === 0) {
+    errors.push(`${path}.qualifiers must contain at least one qualifier.`);
+  }
+
+  const message = String(campaign.message ?? "").trim();
+  if (!message) {
+    errors.push(`${path}.message is required.`);
+  }
+
+  const base = {
+    enabled: campaign.enabled !== false,
+    description: String(campaign.name ?? ""),
+    message,
+    target: String(campaign.target ?? "$.cart"),
+  };
+
+  if (condition === "any") {
+    return qualifiers.map((qualifier, qualifierIndex) => ({
+      ...base,
+      id: `${slugify(campaign.name, `cart-validation-${index + 1}`)}-${qualifierIndex + 1}`,
+      conditions: compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors),
+    }));
+  }
+
+  const conditions = {};
+  qualifiers.forEach((qualifier, qualifierIndex) => {
+    Object.assign(conditions, compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors));
+  });
+
+  return [
+    {
+      ...base,
+      id: slugify(campaign.name, `cart-validation-${index + 1}`),
+      conditions,
+    },
+  ];
+}
+
 function compileCampaigns(campaigns, errors) {
   const rules = [];
   const shippingDiscounts = [];
+  const validations = [];
 
   (campaigns ?? []).forEach((campaign, index) => {
     const path = `campaigns[${index}]`;
@@ -405,10 +452,15 @@ function compileCampaigns(campaigns, errors) {
       return;
     }
 
-    errors.push(`${path} must be HideRates(...) or ShippingDiscount(...).`);
+    if (campaign.type === "CartValidation") {
+      validations.push(...compileCartValidationCampaign(campaign, index, errors));
+      return;
+    }
+
+    errors.push(`${path} must be HideRates(...), ShippingDiscount(...), or CartValidation(...).`);
   });
 
-  return { rules, shippingDiscounts };
+  return { rules, shippingDiscounts, validations };
 }
 
 export function validateRulesConfig(config) {
@@ -468,6 +520,10 @@ export function validateRulesConfig(config) {
     errors.push("shippingDiscounts must be an array when provided.");
   }
 
+  if (config.validations !== undefined && !Array.isArray(config.validations)) {
+    errors.push("validations must be an array when provided.");
+  }
+
   return errors;
 }
 
@@ -485,8 +541,8 @@ export function compileRulesScript(source) {
     errors.push("The script must call campaigns([...]).");
   }
 
-  const { rules, shippingDiscounts } = compileCampaigns(result.campaigns, errors);
-  const config = { version: 1, rules, shippingDiscounts };
+  const { rules, shippingDiscounts, validations } = compileCampaigns(result.campaigns, errors);
+  const config = { version: 1, rules, shippingDiscounts, validations };
   errors.push(...validateRulesConfig(config));
 
   if (errors.length > 0) {

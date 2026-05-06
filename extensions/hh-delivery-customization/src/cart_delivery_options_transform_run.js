@@ -154,6 +154,13 @@ function matchesConditions(rule, signals, deliveryGroup, deliveryOption) {
   }
 
   if (
+    conditions.cartTotalQuantity &&
+    !compareNumber(signals.totalQuantity, conditions.cartTotalQuantity.comparison, conditions.cartTotalQuantity.amount)
+  ) {
+    return false;
+  }
+
+  if (
     typeof conditions.subtotalGreaterThan === "number" &&
     !(signals.subtotal > conditions.subtotalGreaterThan)
   ) {
@@ -164,6 +171,10 @@ function matchesConditions(rule, signals, deliveryGroup, deliveryOption) {
     typeof conditions.subtotalLessThan === "number" &&
     !(signals.subtotal < conditions.subtotalLessThan)
   ) {
+    return false;
+  }
+
+  if (conditions.subtotal && !compareNumber(signals.subtotal, conditions.subtotal.comparison, conditions.subtotal.amount)) {
     return false;
   }
 

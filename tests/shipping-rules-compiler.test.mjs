@@ -54,7 +54,10 @@ describe("shipping rules DSL compiler", () => {
     assert.equal(config.rules.length, 1);
     assert.deepEqual(config.rules[0].conditions, {
       discountCodeIncludes: ["NOMORERUST"],
-      subtotalLessThan: 10,
+      subtotal: {
+        comparison: "less_than",
+        amount: 10,
+      },
     });
     assert.equal(config.rules[0].actions[0].type, "hideAllDeliveryOptions");
   });
@@ -122,7 +125,8 @@ describe("shipping rules DSL compiler", () => {
     const { config } = compileRulesScript(source);
 
     assert.equal(config.shippingDiscounts.length, 5);
-    assert.equal(config.rules.length, 5);
+    assert.equal(config.rules.length, 6);
+    assert.equal(config.validations.length, 1);
     assert.equal(config.shippingDiscounts[1].description, "Free priority by code or quantity");
     assert.deepEqual(config.shippingDiscounts[1].conditions.discountCodeIncludes, [
       "DEAR",
@@ -150,7 +154,40 @@ describe("shipping rules DSL compiler", () => {
         match: "match",
         tags: ["box_shipping"],
       },
-      subtotalGreaterThan: 16,
+      subtotal: {
+        comparison: "greater_than",
+        amount: 16,
+      },
+    });
+  });
+
+  test("compiles the UK Script Editor campaign set", () => {
+    const source = readFileSync(new URL("../docs/uk-shipping-rules-phase-1.dsl.js", import.meta.url), "utf8");
+    const { config } = compileRulesScript(source);
+
+    assert.equal(config.shippingDiscounts.length, 7);
+    assert.equal(config.rules.length, 7);
+    assert.equal(config.validations.length, 1);
+    assert.deepEqual(config.rules[1].conditions.cartTotalQuantity, {
+      comparison: "greater_than",
+      amount: 5,
+    });
+    assert.deepEqual(config.shippingDiscounts[5].conditions.cartTotalQuantity, {
+      comparison: "greater_than_or_equal",
+      amount: 4,
+    });
+  });
+
+  test("compiles the US Script Editor campaign set", () => {
+    const source = readFileSync(new URL("../docs/us-shipping-rules-phase-1.dsl.js", import.meta.url), "utf8");
+    const { config } = compileRulesScript(source);
+
+    assert.equal(config.shippingDiscounts.length, 5);
+    assert.equal(config.rules.length, 4);
+    assert.equal(config.validations.length, 1);
+    assert.deepEqual(config.validations[0].conditions.subtotal, {
+      comparison: "equal_to",
+      amount: 0,
     });
   });
 });

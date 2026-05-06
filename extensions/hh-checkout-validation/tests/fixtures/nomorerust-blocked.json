@@ -1,0 +1,71 @@
+{
+  "payload": {
+    "export": "cart-validations-generate-run",
+    "target": "cart.validations.generate.run",
+    "input": {
+      "validation": {
+        "metafield": {
+          "jsonValue": {
+            "version": 1,
+            "validations": [
+              {
+                "enabled": true,
+                "id": "nomorerust-requires-paid-jewelry",
+                "description": "NOMORERUST requires paid jewelry",
+                "message": "NOMORERUST must be used with at least one paid jewelry item.",
+                "target": "$.cart",
+                "conditions": {
+                  "discountCodeIncludes": ["NOMORERUST"],
+                  "subtotal": {
+                    "comparison": "equal_to",
+                    "amount": 0
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "buyerJourney": {
+        "step": "CHECKOUT_INTERACTION"
+      },
+      "cart": {
+        "discountCodes": {
+          "value": "[\"NOMORERUST\"]"
+        },
+        "cost": {
+          "subtotalAmount": {
+            "amount": "0.0"
+          }
+        },
+        "lines": [
+          {
+            "quantity": 1,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": {
+                "boxShipping": false,
+                "subsBoxMvp": false,
+                "bf22Exc": false
+              }
+            }
+          }
+        ]
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "validationAdd": {
+            "errors": [
+              {
+                "message": "NOMORERUST must be used with at least one paid jewelry item.",
+                "target": "$.cart"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

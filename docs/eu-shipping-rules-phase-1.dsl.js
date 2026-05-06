@@ -129,4 +129,25 @@ campaigns([
     ],
     rateSelector: RateNameSelector({ match: "include", names: ["subscription"] }),
   }),
+
+  HideRates({
+    name: "NOMORERUST hides all shipping at zero subtotal",
+    condition: "all",
+    qualifiers: [
+      CodeQualifier({ match: "include", codes: ["NOMORERUST"] }),
+      CartSubtotalQualifier({ comparison: "equal_to", amount: 0 }),
+    ],
+    rateSelector: AllRatesSelector(),
+  }),
+
+  CartValidation({
+    name: "NOMORERUST requires paid jewelry",
+    condition: "all",
+    qualifiers: [
+      CodeQualifier({ match: "include", codes: ["NOMORERUST"] }),
+      CartSubtotalQualifier({ comparison: "equal_to", amount: 0 }),
+    ],
+    message: "NOMORERUST must be used with at least one paid jewelry item.",
+    target: "$.cart",
+  }),
 ]);

@@ -1,0 +1,33 @@
+query CartValidationsGenerateRunInput {
+  validation {
+    metafield(namespace: "$app:hh-checkout-validation", key: "function-configuration") {
+      jsonValue
+    }
+  }
+  buyerJourney {
+    step
+  }
+  cart {
+    discountCodes: attribute(key: "_hh_discount_codes") {
+      value
+    }
+    cost {
+      subtotalAmount {
+        amount
+      }
+    }
+    lines {
+      quantity
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          product {
+            boxShipping: hasAnyTag(tags: ["box_shipping"])
+            subsBoxMvp: hasAnyTag(tags: ["subs_box_mvp"])
+            bf22Exc: hasAnyTag(tags: ["bf22_exc"])
+          }
+        }
+      }
+    }
+  }
+}

@@ -17,11 +17,14 @@ Phase 1 supports two campaign types:
 ```js
 HideRates({ ... })
 ShippingDiscount({ ... })
+CartValidation({ ... })
 ```
 
 `HideRates` hides matching delivery options when its qualifiers match the cart.
 
 `ShippingDiscount` applies a percentage or fixed-amount discount to matching delivery options when its qualifiers match the cart. This campaign type is powered by the Shopify Discount Function extension, not the Delivery Customization Function.
+
+`CartValidation` shows a blocking checkout message when its qualifiers match the cart. This campaign type is powered by the Shopify Cart and Checkout Validation Function.
 
 ## File Shape
 
@@ -33,6 +36,17 @@ settings({
 });
 
 campaigns([
+  CartValidation({
+    name: "Blocking message",
+    condition: "all",
+    qualifiers: [
+      CodeQualifier({ match: "include", codes: ["NOMORERUST"] }),
+      CartSubtotalQualifier({ comparison: "equal_to", amount: 0 }),
+    ],
+    message: "NOMORERUST must be used with at least one paid jewelry item.",
+    target: "$.cart",
+  }),
+
   HideRates({
     name: "Campaign name",
     condition: "all",
@@ -99,12 +113,14 @@ Uses store currency.
 ```js
 CartSubtotalQualifier({ comparison: "less_than", amount: 10 })
 CartSubtotalQualifier({ comparison: "greater_than", amount: 50 })
+CartSubtotalQualifier({ comparison: "equal_to", amount: 0 })
 ```
 
 ### Total Cart Quantity
 
 ```js
 CartQuantityQualifier({ comparison: "greater_than", amount: 5 })
+CartQuantityQualifier({ comparison: "greater_than_or_equal", amount: 4 })
 CartQuantityQualifier({ comparison: "less_than_or_equal", amount: 5 })
 ```
 
@@ -197,7 +213,11 @@ FixedAmountDiscount({ amount: 5, message: "5 Off Shipping" })
 
 ## Working Examples
 
-The full EU Script Editor migration example lives at `docs/eu-shipping-rules-phase-1.dsl.js`.
+The store migration examples live at:
+
+- `docs/eu-shipping-rules-phase-1.dsl.js`
+- `docs/uk-shipping-rules-phase-1.dsl.js`
+- `docs/us-shipping-rules-phase-1.dsl.js`
 
 ### HHCSF Hides Eco
 
@@ -300,7 +320,24 @@ HideRates({
 })
 ```
 
-Later, this should be paired with a Cart and Checkout Validation Function so checkout can show a message such as:
+Pair it with a `CartValidation` campaign so checkout can show a blocking message:
+
+```js
+CartValidation({
+  name: "NOMORERUST requires paid jewelry",
+  condition: "all",
+  qualifiers: [
+    CodeQualifier({ match: "include", codes: ["NOMORERUST"] }),
+    CartSubtotalQualifier({ comparison: "equal_to", amount: 0 }),
+  ],
+  message: "NOMORERUST must be used with at least one paid jewelry item.",
+  target: "$.cart",
+})
+```
+
+Shopify controls the exact placement of validation errors. In v1, use this as the blocking customer-facing message; in v2 we can add a Checkout UI banner near the shipping area if we want more precise placement.
+
+Example message:
 
 ```txt
 NOMORERUST must be used with at least one paid jewelry item.
@@ -311,7 +348,7 @@ NOMORERUST must be used with at least one paid jewelry item.
 Use a prompt like this:
 
 ```txt
-I am editing HH Shipping Rules DSL. Do not use arbitrary JavaScript, loops, variables, or custom functions. Only use settings(), campaigns(), HideRates(), ShippingDiscount(), CodeQualifier(), NoDiscountCodeQualifier(), CartSubtotalQualifier(), CartQuantityQualifier(), CartHasItemQualifier(), ProductTagSelector(), CountryCodeQualifier(), RateNameSelector(), AllRatesSelector(), PercentageDiscount(), and FixedAmountDiscount().
+I am editing HH Shipping Rules DSL. Do not use arbitrary JavaScript, loops, variables, or custom functions. Only use settings(), campaigns(), HideRates(), ShippingDiscount(), CartValidation(), CodeQualifier(), NoDiscountCodeQualifier(), CartSubtotalQualifier(), CartQuantityQualifier(), CartHasItemQualifier(), ProductTagSelector(), CountryCodeQualifier(), RateNameSelector(), AllRatesSelector(), PercentageDiscount(), and FixedAmountDiscount().
 
 Create a campaign that [describe the business rule]. Use condition "all" when every qualifier must match and "any" when any qualifier can match. Match discount codes and rate names case-insensitively by text inclusion.
 ```

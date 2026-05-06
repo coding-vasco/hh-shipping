@@ -15,6 +15,8 @@ const CONFIG_NAMESPACE = "$app:hh-delivery-customization";
 const CONFIG_KEY = "function-configuration";
 const SHIPPING_DISCOUNT_NAMESPACE = "$app:hh-shipping-discount";
 const SHIPPING_DISCOUNT_TITLE = "HH shipping discounts POC";
+const CHECKOUT_VALIDATION_NAMESPACE = "$app:hh-checkout-validation";
+const CHECKOUT_VALIDATION_TITLE = "HH checkout validation POC";
 
 function assertNoGraphqlErrors(json) {
   if (Array.isArray(json.errors) && json.errors.length > 0) {
@@ -201,6 +203,96 @@ async function publishShippingDiscountConfig(admin, config) {
   }
 }
 
+function checkoutValidationInput(config) {
+  return {
+    title: CHECKOUT_VALIDATION_TITLE,
+    enable: true,
+    blockOnFailure: true,
+    metafields: [
+      {
+        namespace: CHECKOUT_VALIDATION_NAMESPACE,
+        key: CONFIG_KEY,
+        type: "json",
+        value: JSON.stringify(config),
+      },
+    ],
+  };
+}
+
+async function getCheckoutValidationStatus(admin) {
+  const response = await admin.graphql(`#graphql
+    query ExistingCheckoutValidations {
+      validations(first: 25) {
+        nodes {
+          id
+          title
+          enabled
+          metafield(namespace: "$app:hh-checkout-validation", key: "function-configuration") {
+            id
+          }
+        }
+      }
+    }
+  `);
+  const json = await response.json();
+  assertNoGraphqlErrors(json);
+  const nodes = json.data?.validations?.nodes ?? [];
+  return nodes.find((node) => node.title === CHECKOUT_VALIDATION_TITLE) ?? null;
+}
+
+async function publishCheckoutValidationConfig(admin, config) {
+  if (!Array.isArray(config.validations) || config.validations.length === 0) {
+    return;
+  }
+
+  const existing = await getCheckoutValidationStatus(admin);
+  const validation = checkoutValidationInput(config);
+  const mutation = existing?.id
+    ? `#graphql
+      mutation UpdateCheckoutValidation($id: ID!, $validation: ValidationUpdateInput!) {
+        validationUpdate(id: $id, validation: $validation) {
+          validation {
+            id
+            title
+            enabled
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `
+    : `#graphql
+      mutation CreateCheckoutValidation($validation: ValidationCreateInput!) {
+        validationCreate(validation: $validation) {
+          validation {
+            id
+            title
+            enabled
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+  const response = await admin.graphql(mutation, {
+    variables: existing?.id
+      ? { id: existing.id, validation }
+      : { validation: { ...validation, functionHandle: "hh-checkout-validation" } },
+  });
+  const json = await response.json();
+  assertNoGraphqlErrors(json);
+  const payload = existing?.id ? json.data?.validationUpdate : json.data?.validationCreate;
+  const errors = payload?.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new Error(errors.map((error) => error.message).join("; "));
+  }
+}
+
 function compileForServer(source) {
   try {
     return { ok: true, ...compileRulesScript(source) };
@@ -239,6 +331,7 @@ export const loader = async ({ request }) => {
     publishedJson: config.publishedJson,
     deliveryCustomizationStatus: await getDeliveryCustomizationStatus(admin),
     shippingDiscountStatus: await getShippingDiscountStatus(admin),
+    checkoutValidationStatus: await getCheckoutValidationStatus(admin),
     updatedAt: config.updatedAt,
   };
 };
@@ -269,22 +362,23 @@ export const action = async ({ request }) => {
     },
   });
 
-  if (intent === "publish") {
-    try {
-      await publishDeliveryConfig(admin, compiled.config);
-      await publishShippingDiscountConfig(admin, compiled.config);
-      await db.shippingRulesConfig.update({
-        where: { shop: session.shop },
-        data: { publishedJson: compiled.json },
-      });
-    } catch (error) {
-      return { ok: false, message: error.message };
-    }
-
-    return { ok: true, message: "Rules compiled, saved, and published to checkout." };
+  if (intent !== "publish") {
+    return { ok: false, message: "Use Save and publish to update checkout." };
   }
 
-  return { ok: true, message: "Rules compiled and saved as a draft." };
+  try {
+    await publishDeliveryConfig(admin, compiled.config);
+    await publishShippingDiscountConfig(admin, compiled.config);
+    await publishCheckoutValidationConfig(admin, compiled.config);
+    await db.shippingRulesConfig.update({
+      where: { shop: session.shop },
+      data: { publishedJson: compiled.json },
+    });
+  } catch (error) {
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true, message: "Rules compiled, saved, and published to checkout." };
 };
 
 function highlightJson(json) {
@@ -311,7 +405,7 @@ function highlightJson(json) {
 
 function highlightDsl(source) {
   const tokenPattern =
-    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(settings|campaigns|HideRates|ShippingDiscount|CodeQualifier|NoDiscountCodeQualifier|CartSubtotalQualifier|CartQuantityQualifier|CartHasItemQualifier|CountryCodeQualifier|ProductTagSelector|RateNameSelector|AllRatesSelector|PercentageDiscount|FixedAmountDiscount)\b|\b(name|condition|qualifiers|rateSelector|discount|match|codes|names|amount|percent|message|comparison|selector|tags|productTags|countryCodes|enabled)\b(?=\s*:)|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g;
+    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(settings|campaigns|HideRates|ShippingDiscount|CartValidation|CodeQualifier|NoDiscountCodeQualifier|CartSubtotalQualifier|CartQuantityQualifier|CartHasItemQualifier|CountryCodeQualifier|ProductTagSelector|RateNameSelector|AllRatesSelector|PercentageDiscount|FixedAmountDiscount)\b|\b(name|condition|qualifiers|rateSelector|discount|match|codes|names|amount|percent|message|target|comparison|selector|tags|productTags|countryCodes|enabled)\b(?=\s*:)|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g;
   const parts = [];
   let lastIndex = 0;
 
@@ -434,9 +528,10 @@ export default function Index() {
       return {
         hideRules: parsed.rules?.length ?? 0,
         shippingDiscounts: parsed.shippingDiscounts?.length ?? 0,
+        validations: parsed.validations?.length ?? 0,
       };
     } catch {
-      return { hideRules: 0, shippingDiscounts: 0 };
+      return { hideRules: 0, shippingDiscounts: 0, validations: 0 };
     }
   }, [loaderData.rulesJson]);
   const previewJson = loaderData.rulesJson;
@@ -463,11 +558,15 @@ export default function Index() {
             <s-stack direction="inline" gap="base">
               <s-text>Hide rules: {compiledCounts.hideRules}</s-text>
               <s-text>Shipping discounts: {compiledCounts.shippingDiscounts}</s-text>
+              <s-text>Validations: {compiledCounts.validations}</s-text>
               <s-text>
                 Delivery config: {loaderData.deliveryCustomizationStatus?.metafield ? "published" : "missing"}
               </s-text>
               <s-text>
                 Discount function: {loaderData.shippingDiscountStatus?.status ?? "not active"}
+              </s-text>
+              <s-text>
+                Validation: {loaderData.checkoutValidationStatus?.enabled ? "active" : "not active"}
               </s-text>
               <s-text>Unsaved changes: {hasLocalChanges ? "yes" : "no"}</s-text>
               <s-text>Published: {loaderData.publishedJson ? "yes" : "not yet"}</s-text>
@@ -479,6 +578,14 @@ export default function Index() {
               <s-paragraph>
                 Publish to checkout to create the automatic app discount that invokes the HH Shipping Discount
                 function.
+              </s-paragraph>
+            </s-banner>
+          ) : null}
+
+          {compiledCounts.validations > 0 && !loaderData.checkoutValidationStatus?.enabled ? (
+            <s-banner tone="warning" heading="Checkout validation is not active">
+              <s-paragraph>
+                Save and publish to create the checkout validation that shows blocking customer messages.
               </s-paragraph>
             </s-banner>
           ) : null}
@@ -508,25 +615,6 @@ export default function Index() {
                 <button
                   type="submit"
                   name="intent"
-                  value="save"
-                  disabled={isSubmitting}
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #8a8a8a",
-                    borderRadius: 6,
-                    color: "#202223",
-                    cursor: isSubmitting ? "default" : "pointer",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    minHeight: 36,
-                    padding: "0 14px",
-                  }}
-                >
-                  Save draft
-                </button>
-                <button
-                  type="submit"
-                  name="intent"
                   value="publish"
                   disabled={isSubmitting}
                   style={{
@@ -541,7 +629,7 @@ export default function Index() {
                     padding: "0 14px",
                   }}
                 >
-                  Publish to checkout
+                  Save and publish
                 </button>
               </s-stack>
             </s-stack>
@@ -576,6 +664,9 @@ export default function Index() {
           </s-list-item>
           <s-list-item>
             <s-text>ShippingDiscount: apply a discount to matching delivery options.</s-text>
+          </s-list-item>
+          <s-list-item>
+            <s-text>CartValidation: show a blocking checkout message when qualifiers match.</s-text>
           </s-list-item>
           <s-list-item>
             <s-text>condition: "all" means every qualifier must match.</s-text>

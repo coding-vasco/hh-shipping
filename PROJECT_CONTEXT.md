@@ -20,6 +20,7 @@ The MVP centralizes shipping behavior in a Shopify app with a small JavaScript-l
 - Checkout UI Extension: reads applied checkout discount codes and writes them into cart attributes, especially `_hh_discount_codes`. This is needed because Delivery Customization Function input does not expose `cart.discountCodes`.
 - Delivery Customization Function: reads `_hh_discount_codes`, cart data, delivery option title/handle, product tag booleans, and a delivery customization metafield config. It handles `HideRates` campaigns.
 - Discount Function: reads `_hh_discount_codes`, cart data, delivery option title/handle, product tag booleans, and its automatic app discount metafield config. It handles `ShippingDiscount` campaigns.
+- Cart and Checkout Validation Function: reads `_hh_discount_codes`, cart subtotal, product tag booleans, and its validation metafield config. It handles `CartValidation` campaigns such as NOMORERUST checkout blocking messages.
 - Embedded app: stores the editable DSL in Prisma, compiles it to JSON, and publishes config to Shopify.
 
 ## DSL
@@ -30,6 +31,7 @@ Current phase supports:
 - `campaigns([...])`
 - `HideRates`
 - `ShippingDiscount`
+- `CartValidation`
 - `CodeQualifier`
 - `NoDiscountCodeQualifier`
 - `CartSubtotalQualifier`
@@ -52,16 +54,19 @@ Product tags currently wired in function input queries:
 
 Adding more tags currently requires a code change in both function GraphQL input queries and rule evaluation mapping.
 
-## Current Debugging State
+## Current Status
 
-The DSL and compiled JSON match correctly. The compiler is not the current suspect.
+The DSL and compiled JSON match correctly. EU Script Editor campaign parity is confirmed in checkout testing.
 
 The only checkout behavior proven to work earlier came from hardcoded delivery fallback rules. Those fallback rules were removed intentionally. Missing config now means "hide nothing", not "run old defaults".
 
-The current checkout warnings are meaningful:
+The app now uses one primary action: `Save and publish`. Draft-only editing is deferred to v2.
+
+The checkout status warnings are meaningful:
 
 - "Shipping discount is not active": no automatic app discount exists for `HH shipping discounts POC`.
 - "Delivery customization config is missing": the active delivery customization has no `function-configuration` metafield.
+- "Checkout validation is not active": no active validation exists for `HH checkout validation POC`.
 
 Latest Shopify state observed:
 
@@ -73,6 +78,18 @@ Latest Shopify state observed:
 Most likely issue before the current fix: app web-component submit buttons did not reliably post `intent=publish`, causing the server action to save drafts without publishing to Shopify.
 
 Shipping discount activation note: Shopify rejected `combinesWith.shippingDiscounts: true` for the automatic shipping app discount with the error "is not supported with these combines_with settings". Keep `orderDiscounts: true` and `productDiscounts: true`, but set `shippingDiscounts: false` for this POC so code/order discounts can combine with the app shipping discount without asking Shopify to combine it with other shipping discounts.
+
+NOMORERUST v1 behavior:
+
+- `HideRates` can hide all rates when code includes `NOMORERUST` and subtotal equals `0`.
+- `CartValidation` can block checkout and show `NOMORERUST must be used with at least one paid jewelry item.` at `$.cart`.
+- Shopify controls exact validation-message placement. A prettier shipping-area UI banner is a v2 enhancement.
+
+Store example DSL files:
+
+- `docs/eu-shipping-rules-phase-1.dsl.js`
+- `docs/uk-shipping-rules-phase-1.dsl.js`
+- `docs/us-shipping-rules-phase-1.dsl.js`
 
 ## Useful Commands
 
@@ -93,13 +110,15 @@ Use `shopify app execute --query-file .\some-query.graphql --store grace-handmad
 
 `shopify app execute` cannot run mutations on this non-dev store. Mutations must run through the embedded app/Admin API.
 
-## Next Debug Path
+## Production Fork Checklist
 
-1. Make publish buttons use native HTML submit behavior with explicit `intent` values.
-2. Add visible success/failure banners for save and publish actions.
-3. Build/test/deploy.
-4. In the embedded app, click `Publish to checkout`.
-5. Query Shopify to confirm:
+1. Create/rename the production app and set the production app URL.
+2. Configure production env vars on Render.
+3. Deploy Shopify app extensions/config for the production app.
+4. Install production app on EU, UK, and US stores.
+5. In the embedded app, paste the correct store DSL and click `Save and publish`.
+6. Query Shopify to confirm:
    - Delivery customization has metafield `$app:hh-delivery-customization/function-configuration`.
    - Automatic app discount `HH shipping discounts POC` exists and is active.
-6. Only after both are true, test checkout rules.
+   - Checkout validation `HH checkout validation POC` exists and is active when the DSL includes validations.
+7. Test checkout rules and discount combination settings.
