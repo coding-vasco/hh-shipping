@@ -13,6 +13,7 @@ import { authenticate } from "../shopify.server";
 
 const CONFIG_NAMESPACE = "$app:hh-delivery-customization";
 const CONFIG_KEY = "function-configuration";
+const DELIVERY_CUSTOMIZATION_TITLE = "HH delivery customization POC";
 const SHIPPING_DISCOUNT_NAMESPACE = "$app:hh-shipping-discount";
 const SHIPPING_DISCOUNT_TITLE = "HH shipping discounts POC";
 const CHECKOUT_VALIDATION_NAMESPACE = "$app:hh-checkout-validation";
@@ -28,7 +29,7 @@ async function getDeliveryCustomizationId(admin) {
   const preferred = await getDeliveryCustomizationStatus(admin);
 
   if (!preferred) {
-    throw new Error("No delivery customization exists. Activate the delivery customization before publishing rules.");
+    throw new Error(`Delivery customization "${DELIVERY_CUSTOMIZATION_TITLE}" does not exist. Create or activate it before publishing rules.`);
   }
 
   return preferred.id;
@@ -52,12 +53,7 @@ async function getDeliveryCustomizationStatus(admin) {
   const json = await response.json();
   assertNoGraphqlErrors(json);
   const nodes = json.data?.deliveryCustomizations?.nodes ?? [];
-  const preferred =
-    nodes.find((node) => node.title === "HH delivery customization POC") ??
-    nodes.find((node) => node.enabled) ??
-    nodes[0];
-
-  return preferred ?? null;
+  return nodes.find((node) => node.title === DELIVERY_CUSTOMIZATION_TITLE) ?? null;
 }
 
 async function publishDeliveryConfig(admin, config) {
@@ -155,6 +151,7 @@ async function getShippingDiscountStatus(admin) {
 
 async function publishShippingDiscountConfig(admin, config) {
   if (!Array.isArray(config.shippingDiscounts) || config.shippingDiscounts.length === 0) {
+    await deactivateShippingDiscount(admin);
     return;
   }
 
@@ -203,6 +200,36 @@ async function publishShippingDiscountConfig(admin, config) {
   }
 }
 
+async function deactivateShippingDiscount(admin) {
+  const existing = await getShippingDiscountStatus(admin);
+  if (!existing?.discountId || existing.status !== "ACTIVE") return;
+
+  const response = await admin.graphql(
+    `#graphql
+      mutation DeactivateShippingDiscount($id: ID!) {
+        discountAutomaticDeactivate(id: $id) {
+          automaticDiscountNode {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      variables: { id: existing.discountId },
+    },
+  );
+  const json = await response.json();
+  assertNoGraphqlErrors(json);
+  const errors = json.data?.discountAutomaticDeactivate?.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new Error(errors.map((error) => error.message).join("; "));
+  }
+}
+
 function checkoutValidationInput(config) {
   return {
     title: CHECKOUT_VALIDATION_TITLE,
@@ -242,6 +269,7 @@ async function getCheckoutValidationStatus(admin) {
 
 async function publishCheckoutValidationConfig(admin, config) {
   if (!Array.isArray(config.validations) || config.validations.length === 0) {
+    await disableCheckoutValidation(admin);
     return;
   }
 
@@ -288,6 +316,43 @@ async function publishCheckoutValidationConfig(admin, config) {
   assertNoGraphqlErrors(json);
   const payload = existing?.id ? json.data?.validationUpdate : json.data?.validationCreate;
   const errors = payload?.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new Error(errors.map((error) => error.message).join("; "));
+  }
+}
+
+async function disableCheckoutValidation(admin) {
+  const existing = await getCheckoutValidationStatus(admin);
+  if (!existing?.id || !existing.enabled) return;
+
+  const response = await admin.graphql(
+    `#graphql
+      mutation DisableCheckoutValidation($id: ID!, $validation: ValidationUpdateInput!) {
+        validationUpdate(id: $id, validation: $validation) {
+          validation {
+            id
+            title
+            enabled
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      variables: {
+        id: existing.id,
+        validation: {
+          enable: false,
+        },
+      },
+    },
+  );
+  const json = await response.json();
+  assertNoGraphqlErrors(json);
+  const errors = json.data?.validationUpdate?.userErrors ?? [];
   if (errors.length > 0) {
     throw new Error(errors.map((error) => error.message).join("; "));
   }

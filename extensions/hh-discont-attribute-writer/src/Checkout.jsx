@@ -5,6 +5,7 @@ import {
   useApplyAttributeChange,
   useAttributeValues,
   useDiscountCodes,
+  useSubtotalAmount,
 } from "@shopify/ui-extensions/checkout/preact";
 
 const SHIPPING_CAMPAIGN_ATTRIBUTE = "_hh_shipping_campaign";
@@ -17,6 +18,7 @@ export default async () => {
 
 function Extension() {
   const discountCodes = useDiscountCodes();
+  const subtotalAmount = useSubtotalAmount();
   const applyAttributeChange = useApplyAttributeChange();
 
   const [currentCampaign, currentHideEco, currentDiscountCodes] = useAttributeValues([
@@ -87,5 +89,15 @@ function Extension() {
     nextAttributes.hideEco,
   ]);
 
-  return null;
+  const showNoMoreRustWarning =
+    Number(subtotalAmount?.amount ?? 0) === 0 &&
+    nextAttributes.codes.some((code) => code.includes("NOMORERUST"));
+
+  if (!showNoMoreRustWarning) return null;
+
+  return (
+    <s-banner tone="critical" heading="Discount code requires a paid item">
+      NOMORERUST must be used with at least one paid jewelry item.
+    </s-banner>
+  );
 }

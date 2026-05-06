@@ -18,6 +18,7 @@ This file is for Codex continuity. Keep it short, factual, and updated when the 
 The MVP centralizes shipping behavior in a Shopify app with a small JavaScript-like DSL edited in the embedded app.
 
 - Checkout UI Extension: reads applied checkout discount codes and writes them into cart attributes, especially `_hh_discount_codes`. This is needed because Delivery Customization Function input does not expose `cart.discountCodes`.
+- Checkout UI Extension also renders the NOMORERUST warning banner when the app block is placed near shipping methods and the cart has code `NOMORERUST` with subtotal `0`.
 - Delivery Customization Function: reads `_hh_discount_codes`, cart data, delivery option title/handle, product tag booleans, and a delivery customization metafield config. It handles `HideRates` campaigns.
 - Discount Function: reads `_hh_discount_codes`, cart data, delivery option title/handle, product tag booleans, and its automatic app discount metafield config. It handles `ShippingDiscount` campaigns.
 - Cart and Checkout Validation Function: reads `_hh_discount_codes`, cart subtotal, product tag booleans, and its validation metafield config. It handles `CartValidation` campaigns such as NOMORERUST checkout blocking messages.
@@ -83,7 +84,7 @@ NOMORERUST v1 behavior:
 
 - `HideRates` can hide all rates when code includes `NOMORERUST` and subtotal equals `0`.
 - `CartValidation` can block checkout and show `NOMORERUST must be used with at least one paid jewelry item.` at `$.cart`.
-- Shopify controls exact validation-message placement. A prettier shipping-area UI banner is a v2 enhancement.
+- Shopify controls exact validation-message placement. The Checkout UI Extension shows the same message inline wherever the block is placed.
 
 Store example DSL files:
 
@@ -122,3 +123,10 @@ Use `shopify app execute --query-file .\some-query.graphql --store grace-handmad
    - Automatic app discount `HH shipping discounts POC` exists and is active.
    - Checkout validation `HH checkout validation POC` exists and is active when the DSL includes validations.
 7. Test checkout rules and discount combination settings.
+
+## Hardening Decisions
+
+- If `shippingDiscounts` compiles to an empty array, the app deactivates the existing `HH shipping discounts POC` automatic discount.
+- If `validations` compiles to an empty array, the app disables the existing `HH checkout validation POC` validation.
+- Delivery customization publishing is deterministic: it targets title `HH delivery customization POC` only and no longer falls back to the first enabled customization.
+- Dynamic product tags are deferred. Adding tags in `settings({ productTags: [...] })` is not enough yet because Shopify Function input queries are static.

@@ -28,6 +28,19 @@ function input({ config, discountCodes = [], lines = [], deliveryOptions }) {
   };
 }
 
+function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf22Exc = false } = {}) {
+  return {
+    quantity,
+    merchandise: {
+      product: {
+        boxShipping,
+        subsBoxMvp,
+        bf22Exc,
+      },
+    },
+  };
+}
+
 describe("shipping discount rules", () => {
   test("applies percentage discounts to matching delivery options", () => {
     const result = cartDeliveryOptionsDiscountsGenerateRun(
@@ -102,5 +115,149 @@ describe("shipping discount rules", () => {
     });
 
     expect(result).toEqual({ operations: [] });
+  });
+
+  test("applies subscription free standard shipping by product tag", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          shippingDiscounts: [
+            {
+              id: "subscription-free-standard",
+              enabled: true,
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 1,
+                  match: "match",
+                  tags: ["subs_box_mvp"],
+                },
+              },
+              rateSelector: {
+                type: "deliveryOptionsWhereTitleIncludes",
+                values: ["standard"],
+              },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "Free Shipping",
+              },
+            },
+          ],
+        },
+        lines: [productLine({ subsBoxMvp: true })],
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping EU" },
+          { handle: "priority", title: "Priority Handling EU" },
+        ],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0].targets).toEqual([
+      {
+        deliveryOption: {
+          handle: "standard",
+        },
+      },
+    ]);
+  });
+
+  test("applies priority discount for qualifying non-excluded quantity", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          shippingDiscounts: [
+            {
+              id: "free-priority-by-quantity",
+              enabled: true,
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 5,
+                  match: "does_not_match",
+                  tags: ["bf22_exc"],
+                },
+              },
+              rateSelector: {
+                type: "deliveryOptionsWhereTitleIncludes",
+                values: ["Priority", "Prioritaire"],
+              },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "Free Priority Shipping",
+              },
+            },
+          ],
+        },
+        lines: [productLine({ quantity: 5, bf22Exc: false })],
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "priority", title: "Priority Handling" },
+        ],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0]).toMatchObject({
+      message: "Free Priority Shipping",
+      targets: [
+        {
+          deliveryOption: {
+            handle: "priority",
+          },
+        },
+      ],
+    });
+  });
+
+  test("applies UK BFDEAL4 express discount only with 4+ items", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          shippingDiscounts: [
+            {
+              id: "bfdeal4-free-express",
+              enabled: true,
+              conditions: {
+                discountCodeIncludes: ["BFDEAL4"],
+                cartTotalQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 4,
+                },
+              },
+              rateSelector: {
+                type: "deliveryOptionsWhereTitleIncludes",
+                values: ["express"],
+              },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "BFDEAL4 - Free Express Shipping",
+              },
+            },
+          ],
+        },
+        discountCodes: ["BFDEAL4"],
+        lines: [productLine({ quantity: 4 })],
+        deliveryOptions: [
+          { handle: "priority", title: "Priority Handling" },
+          { handle: "express", title: "DHL Express" },
+        ],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0]).toMatchObject({
+      message: "BFDEAL4 - Free Express Shipping",
+      targets: [
+        {
+          deliveryOption: {
+            handle: "express",
+          },
+        },
+      ],
+    });
   });
 });
