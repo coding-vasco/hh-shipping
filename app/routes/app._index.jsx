@@ -110,7 +110,7 @@ function shippingDiscountInput(config) {
     combinesWith: {
       orderDiscounts: true,
       productDiscounts: true,
-      shippingDiscounts: true,
+      shippingDiscounts: false,
     },
     metafields: [
       {

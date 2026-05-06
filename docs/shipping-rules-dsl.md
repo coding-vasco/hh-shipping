@@ -178,6 +178,8 @@ Shipping discounts require an active automatic app discount in Shopify. The app 
 
 If a shipping discount is triggered by a discount code, the existing Shopify discount code must be allowed to combine with shipping discounts. Shopify Functions respect Shopify's discount-combination rules.
 
+The app's automatic shipping discount is created with `orderDiscounts: true`, `productDiscounts: true`, and `shippingDiscounts: false`. The final `false` is intentional: Shopify can reject automatic shipping app discounts that try to combine with other shipping discounts.
+
 ### Percentage Discount
 
 ```js

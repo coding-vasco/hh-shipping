@@ -72,6 +72,8 @@ Latest Shopify state observed:
 
 Most likely issue before the current fix: app web-component submit buttons did not reliably post `intent=publish`, causing the server action to save drafts without publishing to Shopify.
 
+Shipping discount activation note: Shopify rejected `combinesWith.shippingDiscounts: true` for the automatic shipping app discount with the error "is not supported with these combines_with settings". Keep `orderDiscounts: true` and `productDiscounts: true`, but set `shippingDiscounts: false` for this POC so code/order discounts can combine with the app shipping discount without asking Shopify to combine it with other shipping discounts.
+
 ## Useful Commands
 
 Run from `C:\Users\Convidado\Documents\Codex\2026-05-04\hh-shipping-poc`.
@@ -101,4 +103,3 @@ Use `shopify app execute --query-file .\some-query.graphql --store grace-handmad
    - Delivery customization has metafield `$app:hh-delivery-customization/function-configuration`.
    - Automatic app discount `HH shipping discounts POC` exists and is active.
 6. Only after both are true, test checkout rules.
-
