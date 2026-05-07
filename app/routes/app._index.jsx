@@ -29,11 +29,7 @@ function assertNoGraphqlErrors(json) {
 async function getDeliveryCustomizationId(admin) {
   const preferred = await getDeliveryCustomizationStatus(admin);
 
-  if (!preferred) {
-    throw new Error(`Delivery customization "${DELIVERY_CUSTOMIZATION_TITLE}" does not exist. Create or activate it before publishing rules.`);
-  }
-
-  return preferred.id;
+  return preferred?.id ?? createDeliveryCustomization(admin);
 }
 
 async function getDeliveryCustomizationStatus(admin) {
@@ -55,6 +51,50 @@ async function getDeliveryCustomizationStatus(admin) {
   assertNoGraphqlErrors(json);
   const nodes = json.data?.deliveryCustomizations?.nodes ?? [];
   return nodes.find((node) => node.title === DELIVERY_CUSTOMIZATION_TITLE) ?? null;
+}
+
+async function createDeliveryCustomization(admin) {
+  const response = await admin.graphql(
+    `#graphql
+      mutation CreateDeliveryCustomization($deliveryCustomization: DeliveryCustomizationInput!) {
+        deliveryCustomizationCreate(deliveryCustomization: $deliveryCustomization) {
+          deliveryCustomization {
+            id
+            title
+            enabled
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      variables: {
+        deliveryCustomization: {
+          title: DELIVERY_CUSTOMIZATION_TITLE,
+          enabled: true,
+          functionHandle: "hh-delivery-customization",
+        },
+      },
+    },
+  );
+
+  const json = await response.json();
+  assertNoGraphqlErrors(json);
+  const payload = json.data?.deliveryCustomizationCreate;
+  const errors = payload?.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new Error(errors.map((error) => error.message).join("; "));
+  }
+
+  const id = payload?.deliveryCustomization?.id;
+  if (!id) {
+    throw new Error(`Could not create delivery customization "${DELIVERY_CUSTOMIZATION_TITLE}".`);
+  }
+
+  return id;
 }
 
 async function publishDeliveryConfig(admin, config) {
