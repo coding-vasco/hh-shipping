@@ -59,6 +59,17 @@ npm exec -- shopify app deploy --allow-updates --message "Production release"
 
 Render should auto-deploy the `production` branch if the production service is configured to track that branch.
 
+The production rules validator compiles the three store DSL files, checks that each required store file exists, compares the compiled JSON against golden snapshots, and prints checkout-risk warnings for discount-code rules, hide-all-rates rules, shipping discounts, and validations.
+
+Useful variants:
+
+```powershell
+npm run validate:production-rules -- --store hey-harper-shop-nl.myshopify.com
+npm run validate:production-rules -- --json
+npm run validate:production-rules -- --strict
+npm run validate:production-rules -- --no-snapshots
+```
+
 If a production DSL change is intentional, update snapshots before opening the PR:
 
 ```powershell

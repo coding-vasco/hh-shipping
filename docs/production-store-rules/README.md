@@ -20,6 +20,17 @@ npm run validate:production-rules
 npm run test:rules
 ```
 
+The validator fails when a required store DSL file is missing, a DSL does not compile, compiled rule IDs collide, or the compiled JSON does not match its snapshot. It prints warnings for rules that depend on checkout discount-code sync, hide all rates, apply shipping discounts, or block checkout.
+
+Useful variants:
+
+```powershell
+npm run validate:production-rules -- --store hey-harper-shop-nl.myshopify.com
+npm run validate:production-rules -- --json
+npm run validate:production-rules -- --strict
+npm run validate:production-rules -- --no-snapshots
+```
+
 If the compiled output changes intentionally, update golden snapshots:
 
 ```powershell

@@ -29,7 +29,7 @@ Production preparation:
 - Production Shopify config lives in `shopify.app.production.toml` and should be filled with the production app Client ID before use.
 - Prisma uses `DATABASE_URL`; dev can use `file:./dev.sqlite`, production should use a Render persistent disk path such as `file:/var/data/prod.sqlite`.
 - Production safety guardrails live in `.github/pull_request_template.md`, `docs/runbooks/*`, and `docs/testing/manual-checkout-matrix.md`.
-- Production DSL validation command: `npm run validate:production-rules`.
+- Production DSL validation command: `npm run validate:production-rules`. It checks required store files, compilation, duplicate compiled IDs, golden snapshots, and checkout-risk warnings. Useful flags: `--store <shop.myshopify.com>`, `--json`, `--strict`, `--no-snapshots`.
 - Golden snapshots for production DSL compiled output live in `tests/snapshots/production-rules`; update intentionally with `npm run snapshot:production`.
 
 - Checkout UI Extension: reads applied checkout discount codes and writes them into cart attributes, especially `_hh_discount_codes`. This is needed because Delivery Customization Function input does not expose `cart.discountCodes`.
