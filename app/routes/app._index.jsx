@@ -421,6 +421,13 @@ function compileForServer(source) {
   }
 }
 
+function appEnvironment() {
+  const appUrl = process.env.SHOPIFY_APP_URL ?? "";
+  if (appUrl.includes("hh-shipping-rules.onrender.com")) return "production";
+  if (appUrl.includes("hh-shipping.onrender.com")) return "development";
+  return process.env.NODE_ENV === "production" ? "deployed" : "local";
+}
+
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const config = await db.shippingRulesConfig.upsert({
@@ -445,6 +452,7 @@ export const loader = async ({ request }) => {
   }
 
   return {
+    appEnvironment: appEnvironment(),
     shop: session.shop,
     rulesScript,
     rulesJson,
@@ -634,6 +642,170 @@ function DslEditor({ value, onChange }) {
   );
 }
 
+function joinValues(values) {
+  return Array.isArray(values) && values.length > 0 ? values.join(", ") : "none";
+}
+
+function describeComparison(comparison) {
+  switch (comparison) {
+    case "greater_than":
+      return "greater than";
+    case "greater_than_or_equal":
+      return "at least";
+    case "less_than":
+      return "less than";
+    case "less_than_or_equal":
+      return "at most";
+    case "equal_to":
+      return "equal to";
+    default:
+      return comparison ?? "unknown";
+  }
+}
+
+function conditionSummary(conditions = {}) {
+  const parts = [];
+
+  if (conditions.noDiscountCode) parts.push("no discount code");
+  if (conditions.discountCodeIncludes) parts.push(`code includes ${joinValues(conditions.discountCodeIncludes)}`);
+  if (conditions.discountCodeDoesNotInclude) {
+    parts.push(`code does not include ${joinValues(conditions.discountCodeDoesNotInclude)}`);
+  }
+  if (conditions.countryCodeIs) parts.push(`shipping country is ${joinValues(conditions.countryCodeIs)}`);
+  if (conditions.cartTotalQuantity) {
+    parts.push(`cart quantity is ${describeComparison(conditions.cartTotalQuantity.comparison)} ${conditions.cartTotalQuantity.amount}`);
+  }
+  if (conditions.subtotal) {
+    parts.push(`subtotal is ${describeComparison(conditions.subtotal.comparison)} ${conditions.subtotal.amount}`);
+  }
+  if (conditions.lineProductTagQuantity) {
+    const tagCondition = conditions.lineProductTagQuantity;
+    const matchText = tagCondition.match === "does_not_match" ? "without tag" : "with tag";
+    parts.push(
+      `line quantity ${matchText} ${joinValues(tagCondition.tags)} is ${describeComparison(tagCondition.comparison)} ${tagCondition.amount}`,
+    );
+  }
+
+  return parts.length > 0 ? parts.join("; ") : "always";
+}
+
+function rateActionSummary(action) {
+  if (!action) return "does nothing";
+  if (action.type === "hideAllDeliveryOptions") return "hides all rates";
+  if (action.type === "hideDeliveryOptionsWhereTitleIncludes") {
+    return `hides rates containing ${joinValues(action.values)}`;
+  }
+  if (action.type === "hideDeliveryOptionsWhereTitleDoesNotInclude") {
+    return `hides rates not containing ${joinValues(action.values)}`;
+  }
+  return `uses unsupported action ${action.type}`;
+}
+
+function rateSelectorSummary(selector) {
+  if (!selector) return "no rates";
+  if (selector.type === "allDeliveryOptions") return "all rates";
+  if (selector.type === "deliveryOptionsWhereTitleIncludes") return `rates containing ${joinValues(selector.values)}`;
+  if (selector.type === "deliveryOptionsWhereTitleDoesNotInclude") {
+    return `rates not containing ${joinValues(selector.values)}`;
+  }
+  return `unsupported selector ${selector.type}`;
+}
+
+function discountSummary(discount) {
+  if (!discount) return "no discount";
+  if (discount.type === "percentage") return `${discount.value}% off`;
+  if (discount.type === "fixedAmount") return `${discount.amount} off`;
+  return `${discount.type} discount`;
+}
+
+function compiledCampaignSummaries(config) {
+  const rows = [];
+  const seen = new Set();
+
+  for (const rule of config.rules ?? []) {
+    const key = `hide:${rule.description}:${JSON.stringify(rule.conditions)}:${JSON.stringify(rule.actions)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({
+      type: "HideRates",
+      name: rule.description || rule.id,
+      when: conditionSummary(rule.conditions),
+      does: (rule.actions ?? []).map(rateActionSummary).join("; "),
+    });
+  }
+
+  for (const rule of config.shippingDiscounts ?? []) {
+    const key = `discount:${rule.description}:${JSON.stringify(rule.conditions)}:${JSON.stringify(rule.rateSelector)}:${JSON.stringify(rule.discount)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({
+      type: "ShippingDiscount",
+      name: rule.description || rule.id,
+      when: conditionSummary(rule.conditions),
+      does: `${discountSummary(rule.discount)} on ${rateSelectorSummary(rule.rateSelector)}${rule.discount?.message ? `, message "${rule.discount.message}"` : ""}`,
+    });
+  }
+
+  for (const rule of config.validations ?? []) {
+    const key = `validation:${rule.description}:${JSON.stringify(rule.conditions)}:${rule.message}:${rule.target}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({
+      type: "CartValidation",
+      name: rule.description || rule.id,
+      when: conditionSummary(rule.conditions),
+      does: `blocks checkout at ${rule.target ?? "$.cart"} with "${rule.message}"`,
+    });
+  }
+
+  return rows;
+}
+
+function compiledRiskWarnings(config) {
+  const warnings = [];
+  const allRules = [
+    ...(config.rules ?? []),
+    ...(config.shippingDiscounts ?? []),
+    ...(config.validations ?? []),
+  ];
+  const codeRules = allRules.filter(
+    (rule) => rule.conditions?.discountCodeIncludes || rule.conditions?.discountCodeDoesNotInclude,
+  );
+  const hideAllRules = (config.rules ?? []).filter((rule) =>
+    (rule.actions ?? []).some((action) => action.type === "hideAllDeliveryOptions"),
+  );
+
+  if (codeRules.length > 0) {
+    warnings.push({
+      title: "Discount-code rules depend on checkout sync",
+      detail: `${codeRules.length} compiled rule${codeRules.length === 1 ? "" : "s"} use _hh_discount_codes from the Checkout UI Extension.`,
+    });
+  }
+
+  if (hideAllRules.length > 0) {
+    warnings.push({
+      title: "Some rules can hide every shipping rate",
+      detail: hideAllRules.map((rule) => rule.description || rule.id).join(", "),
+    });
+  }
+
+  if ((config.shippingDiscounts ?? []).length > 0) {
+    warnings.push({
+      title: "Shipping discounts depend on Shopify combination settings",
+      detail: "The app automatic shipping discount must be active, and matching discount codes must combine with shipping discounts.",
+    });
+  }
+
+  if ((config.validations ?? []).length > 0) {
+    warnings.push({
+      title: "Checkout validations can block checkout",
+      detail: (config.validations ?? []).map((rule) => rule.description || rule.id).join(", "),
+    });
+  }
+
+  return warnings;
+}
+
 export default function Index() {
   const loaderData = useLoaderData();
   const actionData = useActionData();
@@ -643,18 +815,22 @@ export default function Index() {
 
   const isSubmitting = navigation.state === "submitting";
   const hasLocalChanges = rulesScript !== loaderData.rulesScript;
-  const compiledCounts = useMemo(() => {
+  const compiledConfig = useMemo(() => {
     try {
-      const parsed = JSON.parse(loaderData.rulesJson);
-      return {
-        hideRules: parsed.rules?.length ?? 0,
-        shippingDiscounts: parsed.shippingDiscounts?.length ?? 0,
-        validations: parsed.validations?.length ?? 0,
-      };
+      return JSON.parse(loaderData.rulesJson);
     } catch {
-      return { hideRules: 0, shippingDiscounts: 0, validations: 0 };
+      return { version: 1, rules: [], shippingDiscounts: [], validations: [] };
     }
   }, [loaderData.rulesJson]);
+  const compiledCounts = useMemo(() => {
+    return {
+      hideRules: compiledConfig.rules?.length ?? 0,
+      shippingDiscounts: compiledConfig.shippingDiscounts?.length ?? 0,
+      validations: compiledConfig.validations?.length ?? 0,
+    };
+  }, [compiledConfig]);
+  const campaignSummaries = useMemo(() => compiledCampaignSummaries(compiledConfig), [compiledConfig]);
+  const riskWarnings = useMemo(() => compiledRiskWarnings(compiledConfig), [compiledConfig]);
   const previewJson = loaderData.rulesJson;
 
   useEffect(() => {
@@ -667,6 +843,17 @@ export default function Index() {
 
   return (
     <s-page heading="Shipping Rules">
+      <s-section heading="Environment">
+        <s-banner
+          tone={loaderData.appEnvironment === "production" ? "critical" : "info"}
+          heading={`${loaderData.appEnvironment.toUpperCase()} environment`}
+        >
+          <s-paragraph>
+            Editing <s-text type="emphasis">{loaderData.shop}</s-text>. Published rules affect this shop's checkout.
+          </s-paragraph>
+        </s-banner>
+      </s-section>
+
       <s-section heading="Campaign script">
         <s-stack gap="base">
           <s-paragraph>
@@ -693,6 +880,24 @@ export default function Index() {
               <s-text>Published: {loaderData.publishedJson ? "yes" : "not yet"}</s-text>
             </s-stack>
           </s-box>
+
+          {riskWarnings.length > 0 ? (
+            <s-banner tone="warning" heading="Review before publishing">
+              <s-unordered-list>
+                {riskWarnings.map((warning) => (
+                  <s-list-item key={warning.title}>
+                    <s-text>
+                      {warning.title}: {warning.detail}
+                    </s-text>
+                  </s-list-item>
+                ))}
+              </s-unordered-list>
+            </s-banner>
+          ) : (
+            <s-banner tone="info" heading="No campaign risks detected">
+              <s-paragraph>The compiled ruleset has no active campaigns. Checkout should fail open.</s-paragraph>
+            </s-banner>
+          )}
 
           {compiledCounts.shippingDiscounts > 0 && !loaderData.shippingDiscountStatus ? (
             <s-banner tone="warning" heading="Shipping discount is not active">
@@ -756,6 +961,28 @@ export default function Index() {
             </s-stack>
           </Form>
         </s-stack>
+      </s-section>
+
+      <s-section heading="Compiled campaign summary">
+        {campaignSummaries.length > 0 ? (
+          <s-stack gap="base">
+            {campaignSummaries.map((campaign, index) => (
+              <s-box key={`${campaign.type}-${campaign.name}-${index}`} padding="base" borderWidth="base" borderRadius="base">
+                <s-stack gap="small">
+                  <s-text type="emphasis">
+                    {campaign.type}: {campaign.name}
+                  </s-text>
+                  <s-text>When: {campaign.when}</s-text>
+                  <s-text>Does: {campaign.does}</s-text>
+                </s-stack>
+              </s-box>
+            ))}
+          </s-stack>
+        ) : (
+          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+            <s-text>No campaigns compiled. Publishing this ruleset clears active app-managed shipping rules.</s-text>
+          </s-box>
+        )}
       </s-section>
 
       <s-section heading="Saved compiled JSON">
