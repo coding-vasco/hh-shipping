@@ -36,7 +36,8 @@ function parseDiscountCodes(value) {
 }
 
 function cartSignals(input) {
-  const lines = input.cart.lines ?? [];
+  const cart = input.cart ?? {};
+  const lines = Array.isArray(cart.lines) ? cart.lines : [];
   const knownTags = [];
   const taggedLines = [];
 
@@ -60,8 +61,8 @@ function cartSignals(input) {
   }
 
   return {
-    discountCodes: parseDiscountCodes(input.cart.discountCodes?.value),
-    subtotal: Number(input.cart.cost?.subtotalAmount?.amount ?? 0),
+    discountCodes: parseDiscountCodes(cart.discountCodes?.value),
+    subtotal: Number(cart.cost?.subtotalAmount?.amount ?? 0),
     totalQuantity: lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0),
     knownTags,
     taggedLines,
@@ -152,8 +153,11 @@ export function cartValidationsGenerateRun(input) {
   const errors = [];
 
   for (const rule of config.validations) {
+    if (!rule || typeof rule !== "object") continue;
     if (rule.enabled === false) continue;
     if (!matchesConditions(rule, signals)) continue;
+
+    if (typeof rule.message !== "string" || !rule.message.trim()) continue;
 
     errors.push({
       message: rule.message,

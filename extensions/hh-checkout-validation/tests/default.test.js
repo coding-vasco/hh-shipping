@@ -52,6 +52,79 @@ function input({ subtotal, discountCodes = ["NOMORERUST"] }) {
 }
 
 describe("checkout validation rules", () => {
+  test("missing config fails open", () => {
+    const result = cartValidationsGenerateRun({
+      validation: {
+        metafield: null,
+      },
+      cart: {
+        discountCodes: { value: "[\"NOMORERUST\"]" },
+        cost: {
+          subtotalAmount: {
+            amount: "0",
+          },
+        },
+        lines: [],
+      },
+    });
+
+    expect(result).toEqual({
+      operations: [
+        {
+          validationAdd: {
+            errors: [],
+          },
+        },
+      ],
+    });
+  });
+
+  test("malformed config fails open", () => {
+    const result = cartValidationsGenerateRun({
+      validation: {
+        metafield: {
+          jsonValue: {
+            version: 1,
+            validations: [
+              null,
+              {
+                id: "missing-message",
+                enabled: true,
+                target: "$.cart",
+                conditions: {
+                  discountCodeIncludes: ["NOMORERUST"],
+                  subtotal: {
+                    comparison: "equal_to",
+                    amount: 0,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+      cart: {
+        discountCodes: { value: "[\"NOMORERUST\"]" },
+        cost: {
+          subtotalAmount: {
+            amount: "0",
+          },
+        },
+        lines: [],
+      },
+    });
+
+    expect(result).toEqual({
+      operations: [
+        {
+          validationAdd: {
+            errors: [],
+          },
+        },
+      ],
+    });
+  });
+
   test("blocks NOMORERUST carts with zero subtotal", () => {
     const result = cartValidationsGenerateRun(input({ subtotal: 0 }));
 

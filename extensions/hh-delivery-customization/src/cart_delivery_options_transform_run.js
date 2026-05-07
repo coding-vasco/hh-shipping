@@ -42,8 +42,9 @@ function parseDiscountCodes(value) {
 }
 
 function cartSignals(input) {
-  const discountCodes = parseDiscountCodes(input.cart.discountCodes?.value);
-  const lines = input.cart.lines ?? [];
+  const cart = input.cart ?? {};
+  const discountCodes = parseDiscountCodes(cart.discountCodes?.value);
+  const lines = Array.isArray(cart.lines) ? cart.lines : [];
   const knownTags = [];
   const taggedLines = [];
 
@@ -66,7 +67,7 @@ function cartSignals(input) {
 
   return {
     discountCodes,
-    subtotal: Number(input.cart.cost?.subtotalAmount?.amount ?? 0),
+    subtotal: Number(cart.cost?.subtotalAmount?.amount ?? 0),
     totalQuantity: lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0),
     knownTags,
     taggedLines,
@@ -216,7 +217,7 @@ function matchesConditions(rule, signals, deliveryGroup, deliveryOption) {
 function actionHidesDeliveryOption(action, deliveryOption) {
   const text = optionText(deliveryOption);
 
-  switch (action.type) {
+  switch (action?.type) {
     case "hideAllDeliveryOptions":
       return true;
     case "hideDeliveryOptionsWhereTitleIncludes":
@@ -246,13 +247,17 @@ export function cartDeliveryOptionsTransformRun(input) {
   const hiddenHandles = new Set();
   const config = rulesConfig(input);
   const signals = cartSignals(input);
+  const deliveryGroups = Array.isArray(input.cart?.deliveryGroups) ? input.cart.deliveryGroups : [];
 
-  for (const deliveryGroup of input.cart.deliveryGroups) {
-    for (const deliveryOption of deliveryGroup.deliveryOptions) {
+  for (const deliveryGroup of deliveryGroups) {
+    const deliveryOptions = Array.isArray(deliveryGroup.deliveryOptions) ? deliveryGroup.deliveryOptions : [];
+    for (const deliveryOption of deliveryOptions) {
       const shouldHide = config.rules.some((rule) => {
+        if (!rule || typeof rule !== "object") return false;
         if (rule.enabled === false) return false;
         if (!matchesConditions(rule, signals, deliveryGroup, deliveryOption)) return false;
-        return (rule.actions ?? []).some((action) => actionHidesDeliveryOption(action, deliveryOption));
+        const actions = Array.isArray(rule.actions) ? rule.actions : [];
+        return actions.some((action) => actionHidesDeliveryOption(action, deliveryOption));
       });
 
       if (shouldHide && !hiddenHandles.has(deliveryOption.handle)) {

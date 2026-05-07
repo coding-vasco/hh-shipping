@@ -117,6 +117,69 @@ describe("shipping discount rules", () => {
     expect(result).toEqual({ operations: [] });
   });
 
+  test("malformed config fails open", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          shippingDiscounts: [
+            null,
+            {
+              id: "bad-selector",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["FREESHIP"] },
+              rateSelector: { type: "unsupportedSelector" },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "Free Shipping",
+              },
+            },
+          ],
+        },
+        discountCodes: ["FREESHIP"],
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+        ],
+      }),
+    );
+
+    expect(result).toEqual({ operations: [] });
+  });
+
+  test("missing delivery groups fail open", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun({
+      discount: {
+        discountClasses: ["SHIPPING"],
+        metafield: {
+          jsonValue: {
+            version: 1,
+            shippingDiscounts: [
+              {
+                id: "free-everything",
+                enabled: true,
+                conditions: {},
+                rateSelector: { type: "allDeliveryOptions" },
+                discount: {
+                  type: "percentage",
+                  value: 100,
+                  message: "Free Shipping",
+                },
+              },
+            ],
+          },
+        },
+      },
+      cart: {
+        discountCodes: { value: "FREESHIP" },
+        cost: { subtotalAmount: { amount: "42" } },
+        lines: [],
+      },
+    });
+
+    expect(result).toEqual({ operations: [] });
+  });
+
   test("applies subscription free standard shipping by product tag", () => {
     const result = cartDeliveryOptionsDiscountsGenerateRun(
       input({

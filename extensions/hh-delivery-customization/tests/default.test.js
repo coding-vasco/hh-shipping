@@ -57,6 +57,65 @@ describe("delivery customization rules", () => {
     });
   });
 
+  test("malformed config fails open", () => {
+    const result = cartDeliveryOptionsTransformRun(
+      input({
+        config: {
+          version: 1,
+          rules: [
+            null,
+            {
+              id: "bad-actions",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["VIP50"] },
+              actions: null,
+            },
+            {
+              id: "unknown-action",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["VIP50"] },
+              actions: [{ type: "unsupportedHideEverything" }],
+            },
+          ],
+        },
+        discountCodes: ["VIP50"],
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "subscription", title: "Subscription Delivery" },
+        ],
+      }),
+    );
+
+    expect(result).toEqual({ operations: [] });
+  });
+
+  test("missing delivery groups fail open", () => {
+    const result = cartDeliveryOptionsTransformRun({
+      deliveryCustomization: {
+        metafield: {
+          jsonValue: {
+            version: 1,
+            rules: [
+              {
+                id: "hide-all",
+                enabled: true,
+                conditions: {},
+                actions: [{ type: "hideAllDeliveryOptions" }],
+              },
+            ],
+          },
+        },
+      },
+      cart: {
+        discountCodes: { value: "VIP50" },
+        cost: { subtotalAmount: { amount: "42" } },
+        lines: [],
+      },
+    });
+
+    expect(result).toEqual({ operations: [] });
+  });
+
   test("published subscription campaigns hide non-subscription delivery options", () => {
     const result = cartDeliveryOptionsTransformRun(
       input({

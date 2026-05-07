@@ -32,6 +32,7 @@ Production preparation:
 - Production DSL validation command: `npm run validate:production-rules`. It checks required store files, compilation, duplicate compiled IDs, golden snapshots, and checkout-risk warnings. Useful flags: `--store <shop.myshopify.com>`, `--json`, `--strict`, `--no-snapshots`.
 - Golden snapshots for production DSL compiled output live in `tests/snapshots/production-rules`; update intentionally with `npm run snapshot:production`.
 - Runtime golden tests live in `tests/production-runtime-golden.test.mjs`; they compile the production DSL files and assert representative real Function outputs for Delivery Customization, Shipping Discount, Checkout Validation, and fail-open behavior.
+- Function-local fail-open tests cover malformed config, missing delivery groups, missing validation messages, and missing metafields. Production behavior should remain fail-open: do not hide rates, do not apply discounts, and do not block checkout when runtime inputs are uncertain.
 
 - Checkout UI Extension: reads applied checkout discount codes and writes them into cart attributes, especially `_hh_discount_codes`. This is needed because Delivery Customization Function input does not expose `cart.discountCodes`.
 - Checkout UI Extension also renders the NOMORERUST warning banner when the app block is placed near shipping methods and the cart has code `NOMORERUST` with subtotal `0`.

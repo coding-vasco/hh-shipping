@@ -40,8 +40,9 @@ function parseDiscountCodes(value) {
 }
 
 function cartSignals(input) {
-  const discountCodes = parseDiscountCodes(input.cart.discountCodes?.value);
-  const lines = input.cart.lines ?? [];
+  const cart = input.cart ?? {};
+  const discountCodes = parseDiscountCodes(cart.discountCodes?.value);
+  const lines = Array.isArray(cart.lines) ? cart.lines : [];
   const knownTags = [];
   const taggedLines = [];
 
@@ -66,7 +67,7 @@ function cartSignals(input) {
 
   return {
     discountCodes,
-    subtotal: Number(input.cart.cost?.subtotalAmount?.amount ?? 0),
+    subtotal: Number(cart.cost?.subtotalAmount?.amount ?? 0),
     totalQuantity: lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0),
     knownTags,
     taggedLines,
@@ -231,13 +232,16 @@ export function cartDeliveryOptionsDiscountsGenerateRun(input) {
   const config = rulesConfig(input);
   const signals = cartSignals(input);
   const candidates = [];
+  const deliveryGroups = Array.isArray(input.cart?.deliveryGroups) ? input.cart.deliveryGroups : [];
 
   for (const rule of config.shippingDiscounts) {
+    if (!rule || typeof rule !== "object") continue;
     if (rule.enabled === false) continue;
 
     const targets = [];
-    for (const deliveryGroup of input.cart.deliveryGroups) {
-      for (const deliveryOption of deliveryGroup.deliveryOptions) {
+    for (const deliveryGroup of deliveryGroups) {
+      const deliveryOptions = Array.isArray(deliveryGroup.deliveryOptions) ? deliveryGroup.deliveryOptions : [];
+      for (const deliveryOption of deliveryOptions) {
         if (!matchesConditions(rule, signals, deliveryGroup, deliveryOption)) continue;
         if (!selectorMatches(rule.rateSelector, deliveryOption)) continue;
 
