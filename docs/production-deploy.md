@@ -70,6 +70,8 @@ npm run validate:production-rules -- --strict
 npm run validate:production-rules -- --no-snapshots
 ```
 
+`npm run test:rules` also runs runtime golden tests that feed representative EU/UK/US production DSL scenarios into the actual Delivery Customization, Shipping Discount, and Checkout Validation Function modules. These tests are intentionally close to checkout behavior and should be updated when a production campaign behavior changes intentionally.
+
 If a production DSL change is intentional, update snapshots before opening the PR:
 
 ```powershell
