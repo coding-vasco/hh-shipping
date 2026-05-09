@@ -19,6 +19,8 @@ const SHIPPING_DISCOUNT_TITLE = "HH shipping discounts POC";
 const CHECKOUT_VALIDATION_NAMESPACE = "$app:hh-checkout-validation";
 const CHECKOUT_VALIDATION_TITLE = "HH checkout validation POC";
 const CHECKOUT_UI_NAMESPACE = "$app:hh-checkout-ui";
+const FUNCTION_INPUT_NAMESPACE = "$app:hh-function-input";
+const FUNCTION_INPUT_KEY = "input-variables";
 
 function assertNoGraphqlErrors(json) {
   if (Array.isArray(json.errors) && json.errors.length > 0) {
@@ -99,6 +101,7 @@ async function createDeliveryCustomization(admin) {
 
 async function publishDeliveryConfig(admin, config) {
   const ownerId = await getDeliveryCustomizationId(admin);
+  const productTags = config.productTags ?? [];
   const response = await admin.graphql(
     `#graphql
       mutation PublishShippingRules($metafields: [MetafieldsSetInput!]!) {
@@ -125,6 +128,13 @@ async function publishDeliveryConfig(admin, config) {
             type: "json",
             value: JSON.stringify(config),
           },
+          {
+            ownerId,
+            namespace: FUNCTION_INPUT_NAMESPACE,
+            key: FUNCTION_INPUT_KEY,
+            type: "json",
+            value: JSON.stringify({ productTags }),
+          },
         ],
       },
     },
@@ -139,6 +149,7 @@ async function publishDeliveryConfig(admin, config) {
 }
 
 function shippingDiscountInput(config) {
+  const productTags = config.productTags ?? [];
   return {
     title: SHIPPING_DISCOUNT_TITLE,
     functionHandle: "hh-shipping-discount",
@@ -157,6 +168,12 @@ function shippingDiscountInput(config) {
         key: CONFIG_KEY,
         type: "json",
         value: JSON.stringify(config),
+      },
+      {
+        namespace: FUNCTION_INPUT_NAMESPACE,
+        key: FUNCTION_INPUT_KEY,
+        type: "json",
+        value: JSON.stringify({ productTags }),
       },
     ],
   };
@@ -272,6 +289,7 @@ async function deactivateShippingDiscount(admin) {
 }
 
 function checkoutValidationInput(config) {
+  const productTags = config.productTags ?? [];
   return {
     title: CHECKOUT_VALIDATION_TITLE,
     enable: true,
@@ -282,6 +300,12 @@ function checkoutValidationInput(config) {
         key: CONFIG_KEY,
         type: "json",
         value: JSON.stringify(config),
+      },
+      {
+        namespace: FUNCTION_INPUT_NAMESPACE,
+        key: FUNCTION_INPUT_KEY,
+        type: "json",
+        value: JSON.stringify({ productTags }),
       },
     ],
   };
@@ -1144,8 +1168,8 @@ export default function Index() {
           </s-list-item>
         </s-unordered-list>
         <s-paragraph>
-          Matching is case-insensitive. Current product tags wired in the function are box_shipping, subs_box_mvp, and
-          bf22_exc.
+          Matching is case-insensitive. Product tags must be listed in settings.productTags before a campaign can use
+          them.
         </s-paragraph>
       </s-section>
     </s-page>

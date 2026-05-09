@@ -1,4 +1,4 @@
-query CartDeliveryOptionsTransformRunInput {
+query CartDeliveryOptionsTransformRunInput($productTags: [String!]! = []) {
   deliveryCustomization {
     metafield(namespace: "$app:hh-delivery-customization", key: "function-configuration") {
       jsonValue
@@ -25,9 +25,10 @@ query CartDeliveryOptionsTransformRunInput {
         __typename
         ... on ProductVariant {
           product {
-            boxShipping: hasAnyTag(tags: ["box_shipping"])
-            subsBoxMvp: hasAnyTag(tags: ["subs_box_mvp"])
-            bf22Exc: hasAnyTag(tags: ["bf22_exc"])
+            dynamicTags: hasTags(tags: $productTags) {
+              tag
+              hasTag
+            }
           }
         }
       }

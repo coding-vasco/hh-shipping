@@ -41,6 +41,22 @@ function parseDiscountCodes(value) {
   }
 }
 
+function productTags(product) {
+  const tags = [];
+
+  if (Array.isArray(product.dynamicTags)) {
+    for (const tagResponse of product.dynamicTags) {
+      if (tagResponse?.hasTag && tagResponse.tag) tags.push(String(tagResponse.tag));
+    }
+  }
+
+  if (product.boxShipping) tags.push("box_shipping");
+  if (product.subsBoxMvp) tags.push("subs_box_mvp");
+  if (product.bf22Exc) tags.push("bf22_exc");
+
+  return [...new Set(tags)];
+}
+
 function cartSignals(input) {
   const cart = input.cart ?? {};
   const discountCodes = parseDiscountCodes(cart.discountCodes?.value);
@@ -51,17 +67,8 @@ function cartSignals(input) {
   for (const line of lines) {
     const product = line.merchandise?.product;
     if (!product) continue;
-    const tags = [];
-    if (product.boxShipping) knownTags.push("box_shipping");
-    if (product.boxShipping) tags.push("box_shipping");
-    if (product.subsBoxMvp) {
-      knownTags.push("subs_box_mvp");
-      tags.push("subs_box_mvp");
-    }
-    if (product.bf22Exc) {
-      knownTags.push("bf22_exc");
-      tags.push("bf22_exc");
-    }
+    const tags = productTags(product);
+    knownTags.push(...tags);
     taggedLines.push({ quantity: line.quantity ?? 0, tags });
   }
 

@@ -8,6 +8,7 @@ describe("shipping rules DSL compiler", () => {
     const { config } = compileRulesScript(DEFAULT_RULES_SCRIPT);
 
     assert.equal(config.version, 1);
+    assert.deepEqual(config.productTags, ["box_shipping", "subs_box_mvp", "bf22_exc"]);
     assert.deepEqual(config.rules, []);
     assert.deepEqual(config.shippingDiscounts, []);
     assert.deepEqual(config.validations, []);
@@ -118,14 +119,37 @@ describe("shipping rules DSL compiler", () => {
   });
 
 
-  test("rejects product tags that are not wired in the function input query", () => {
+  test("allows product tags declared in settings", () => {
+    const { config } = compileRulesScript(`
+      settings({ productTags: ["new_ops_tag"] });
+      campaigns([
+        HideRates({
+          name: "Ops tag",
+          condition: "all",
+          qualifiers: [
+            CartHasItemQualifier({
+              comparison: "greater_than_or_equal",
+              amount: 1,
+              selector: ProductTagSelector({ match: "match", tags: ["new_ops_tag"] }),
+            }),
+          ],
+          rateSelector: RateNameSelector({ match: "include", names: ["eco"] }),
+        }),
+      ]);
+    `);
+
+    assert.deepEqual(config.productTags, ["new_ops_tag"]);
+    assert.deepEqual(config.rules[0].conditions.lineProductTagQuantity.tags, ["new_ops_tag"]);
+  });
+
+  test("rejects product tags that are not declared in settings", () => {
     assert.throws(
       () =>
         compileRulesScript(`
-          settings({ productTags: ["new_ops_tag"] });
+          settings({ productTags: ["box_shipping"] });
           campaigns([
             HideRates({
-              name: "Unsupported tag",
+              name: "Undeclared tag",
               condition: "all",
               qualifiers: [
                 CartHasItemQualifier({
@@ -138,7 +162,7 @@ describe("shipping rules DSL compiler", () => {
             }),
           ]);
         `),
-      /new_ops_tag/,
+      /settings\.productTags/,
     );
   });
 

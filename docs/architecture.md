@@ -43,12 +43,25 @@ When config is missing, malformed, or uncertain, checkout should remain open:
 
 Any change that weakens this principle is high risk.
 
-## Static Product Tags
+## Dynamic Product Tags
 
-Product tags are statically wired in Shopify Function input queries:
+Product tags are declared in the DSL:
 
-- `box_shipping`
-- `subs_box_mvp`
-- `bf22_exc`
+```js
+settings({
+  productTags: ["box_shipping", "subs_box_mvp", "bf22_exc"],
+});
+```
 
-Adding a new tag is a code change, not just a DSL edit.
+On publish, the app writes those tags to the Shopify Function owner metafield
+`$app:hh-function-input/input-variables` as:
+
+```json
+{ "productTags": ["box_shipping", "subs_box_mvp", "bf22_exc"] }
+```
+
+The three Shopify Functions use that metafield as input-query variables and call
+`product.hasTags(tags: $productTags)`. A campaign can reference any product tag
+listed in `settings.productTags`. The compiler rejects product tag references that
+are not declared in settings. Shopify Function input variables support up to 100
+values, so keep this list focused on campaign-relevant tags.

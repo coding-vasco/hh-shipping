@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { cartValidationsGenerateRun } from "../src/cart_validations_generate_run.js";
 
-function input({ subtotal, discountCodes = ["NOMORERUST"] }) {
+function input({ subtotal, discountCodes = ["NOMORERUST"], config, lines } = {}) {
   return {
     validation: {
       metafield: {
-        jsonValue: {
+        jsonValue: config ?? {
           version: 1,
           validations: [
             {
@@ -35,7 +35,7 @@ function input({ subtotal, discountCodes = ["NOMORERUST"] }) {
           amount: String(subtotal),
         },
       },
-      lines: [
+      lines: lines ?? [
         {
           quantity: 1,
           merchandise: {
@@ -43,6 +43,7 @@ function input({ subtotal, discountCodes = ["NOMORERUST"] }) {
               boxShipping: false,
               subsBoxMvp: false,
               bf22Exc: false,
+              dynamicTags: [],
             },
           },
         },
@@ -170,5 +171,50 @@ describe("checkout validation rules", () => {
         },
       ],
     });
+  });
+
+  test("uses product tags from dynamic function input variables", () => {
+    const result = cartValidationsGenerateRun(
+      input({
+        subtotal: 10,
+        lines: [
+          {
+            quantity: 1,
+            merchandise: {
+              product: {
+                dynamicTags: [{ tag: "ops_campaign_tag", hasTag: true }],
+              },
+            },
+          },
+        ],
+        config: {
+          version: 1,
+          productTags: ["ops_campaign_tag"],
+          validations: [
+            {
+              id: "dynamic-tag-validation",
+              enabled: true,
+              message: "Dynamic tag validation",
+              target: "$.cart",
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 1,
+                  match: "match",
+                  tags: ["ops_campaign_tag"],
+                },
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(result.operations[0].validationAdd.errors).toEqual([
+      {
+        message: "Dynamic tag validation",
+        target: "$.cart",
+      },
+    ]);
   });
 });

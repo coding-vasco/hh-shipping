@@ -67,13 +67,12 @@ Current phase supports:
 
 Matching is intended to be case-insensitive. Rate matching checks both delivery option title and handle.
 
-Product tags currently wired in function input queries:
-
-- `box_shipping`
-- `subs_box_mvp`
-- `bf22_exc`
-
-Adding more tags currently requires a code change in both function GraphQL input queries and rule evaluation mapping.
+Product tags are dynamically declared in `settings({ productTags: [...] })`.
+On publish, the app writes those tags to `$app:hh-function-input/input-variables`
+on each Function owner. The Function input queries call `product.hasTags(tags:
+$productTags)`, so ops can add campaign tags in DSL settings without a code
+change. The compiler rejects a `ProductTagSelector` tag that is not declared in
+`settings.productTags`. Shopify caps Function input variable arrays at 100 values.
 
 ## Current Status
 
@@ -105,6 +104,7 @@ Completed phases:
 - Phase D: fail-open runtime hardening/tests.
 - Phase E: admin UI safety improvements on `main` / Grace.
 - Phase F: lightweight admin publish safety UX on `main` / Grace.
+- Phase G: dynamic product tag strategy implemented on `main` / Grace.
 
 Phase F UX behavior:
 
@@ -178,4 +178,4 @@ Use `shopify app execute --query-file .\some-query.graphql --store grace-handmad
 - If `shippingDiscounts` compiles to an empty array, the app deactivates the existing `HH shipping discounts POC` automatic discount.
 - If `validations` compiles to an empty array, the app disables the existing `HH checkout validation POC` validation.
 - Delivery customization publishing is deterministic: it targets title `HH delivery customization POC` only and no longer falls back to the first enabled customization.
-- Dynamic product tags are deferred. Adding tags in `settings({ productTags: [...] })` is not enough yet because Shopify Function input queries are static.
+- Dynamic product tags are supported through Shopify Function input-query variables. Add campaign tags to `settings({ productTags: [...] })` before referencing them in `ProductTagSelector`.

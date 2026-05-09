@@ -149,15 +149,18 @@ CartHasItemQualifier({
 })
 ```
 
-Important: the Delivery Customization Function must query each product tag explicitly. Phase 1 currently wires:
+Important: every product tag used by a campaign must be declared in `settings.productTags`.
+When you publish, the app passes that list to each Shopify Function as input-query variables.
+The Functions then check products with Shopify's `hasTags` field.
 
-```txt
-box_shipping
-subs_box_mvp
-bf22_exc
+```js
+settings({
+  productTags: ["box_shipping", "subs_box_mvp", "bf22_exc", "new_ops_tag"],
+});
 ```
 
-Adding a new tag is a developer task until we add dynamic tag support.
+Shopify Function input variables support up to 100 values. Keep this list to the tags
+that campaigns actually need.
 
 ### Shipping Country
 

@@ -3406,7 +3406,9 @@ export enum WeightUnit {
   Pounds = 'POUNDS'
 }
 
-export type CartDeliveryOptionsDiscountsGenerateRunInputVariables = Exact<{ [key: string]: never; }>;
+export type CartDeliveryOptionsDiscountsGenerateRunInputVariables = Exact<{
+  productTags?: Array<Scalars['String']['input']> | Scalars['String']['input'];
+}>;
 
 
-export type CartDeliveryOptionsDiscountsGenerateRunInput = { __typename?: 'Input', cart: { __typename?: 'Cart', discountCodes?: { __typename?: 'Attribute', value?: string | null } | null, cost: { __typename?: 'CartCost', subtotalAmount: { __typename?: 'MoneyV2', amount: any } }, lines: Array<{ __typename?: 'CartLine', quantity: number, merchandise: { __typename: 'CustomProduct' } | { __typename: 'ProductVariant', product: { __typename?: 'Product', boxShipping: boolean, subsBoxMvp: boolean, bf22Exc: boolean } } }>, deliveryGroups: Array<{ __typename?: 'CartDeliveryGroup', id: string, deliveryAddress?: { __typename?: 'MailingAddress', countryCode?: CountryCode | null } | null, deliveryOptions: Array<{ __typename?: 'CartDeliveryOption', handle: any, title?: string | null }> }> }, discount: { __typename?: 'Discount', discountClasses: Array<DiscountClass>, metafield?: { __typename?: 'Metafield', jsonValue: any } | null } };
+export type CartDeliveryOptionsDiscountsGenerateRunInput = { __typename?: 'Input', cart: { __typename?: 'Cart', discountCodes?: { __typename?: 'Attribute', value?: string | null } | null, cost: { __typename?: 'CartCost', subtotalAmount: { __typename?: 'MoneyV2', amount: any } }, lines: Array<{ __typename?: 'CartLine', quantity: number, merchandise: { __typename: 'CustomProduct' } | { __typename: 'ProductVariant', product: { __typename?: 'Product', dynamicTags: Array<{ __typename?: 'HasTagResponse', tag: string, hasTag: boolean }> } } }>, deliveryGroups: Array<{ __typename?: 'CartDeliveryGroup', id: string, deliveryAddress?: { __typename?: 'MailingAddress', countryCode?: CountryCode | null } | null, deliveryOptions: Array<{ __typename?: 'CartDeliveryOption', handle: any, title?: string | null }> }> }, discount: { __typename?: 'Discount', discountClasses: Array<DiscountClass>, metafield?: { __typename?: 'Metafield', jsonValue: any } | null } };

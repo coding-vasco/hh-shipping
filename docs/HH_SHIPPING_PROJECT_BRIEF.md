@@ -64,13 +64,10 @@ Supported qualifiers/selectors:
 - `PercentageDiscount`
 - `FixedAmountDiscount`
 
-Product tags currently wired into Function input queries:
-
-- `box_shipping`
-- `subs_box_mvp`
-- `bf22_exc`
-
-Adding product tags is still a developer task because Shopify Function input queries are static.
+Product tags are declared in `settings({ productTags: [...] })`. On publish, the app
+writes those tags to each Shopify Function owner as input-query variables. Campaigns
+can reference any product tag declared in settings, up to Shopify's 100-value input
+variable limit.
 
 ## Safety Principles
 

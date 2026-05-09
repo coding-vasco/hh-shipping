@@ -1,4 +1,4 @@
-query CartDeliveryOptionsDiscountsGenerateRunInput {
+query CartDeliveryOptionsDiscountsGenerateRunInput($productTags: [String!]! = []) {
   cart {
     discountCodes: attribute(key: "_hh_discount_codes") {
       value
@@ -14,9 +14,10 @@ query CartDeliveryOptionsDiscountsGenerateRunInput {
         __typename
         ... on ProductVariant {
           product {
-            boxShipping: hasAnyTag(tags: ["box_shipping"])
-            subsBoxMvp: hasAnyTag(tags: ["subs_box_mvp"])
-            bf22Exc: hasAnyTag(tags: ["bf22_exc"])
+            dynamicTags: hasTags(tags: $productTags) {
+              tag
+              hasTag
+            }
           }
         }
       }

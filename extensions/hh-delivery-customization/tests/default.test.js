@@ -28,7 +28,7 @@ function input({ config = null, discountCodes = [], subtotal = 42, lines = [], d
   };
 }
 
-function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf22Exc = false } = {}) {
+function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf22Exc = false, dynamicTags = [] } = {}) {
   return {
     quantity,
     merchandise: {
@@ -36,6 +36,7 @@ function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf
         boxShipping,
         subsBoxMvp,
         bf22Exc,
+        dynamicTags,
       },
     },
   };
@@ -342,5 +343,56 @@ describe("delivery customization rules", () => {
         },
       ],
     });
+  });
+
+  test("uses product tags from dynamic function input variables", () => {
+    const result = cartDeliveryOptionsTransformRun(
+      input({
+        lines: [
+          productLine({
+            dynamicTags: [
+              { tag: "ops_campaign_tag", hasTag: true },
+              { tag: "ignored_tag", hasTag: false },
+            ],
+          }),
+        ],
+        config: {
+          version: 1,
+          productTags: ["ops_campaign_tag", "ignored_tag"],
+          rules: [
+            {
+              id: "dynamic-tag-hides-eco",
+              enabled: true,
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 1,
+                  match: "match",
+                  tags: ["ops_campaign_tag"],
+                },
+              },
+              actions: [
+                {
+                  type: "hideDeliveryOptionsWhereTitleIncludes",
+                  values: ["eco"],
+                },
+              ],
+            },
+          ],
+        },
+        deliveryOptions: [
+          { handle: "eco", title: "Eco Delivery" },
+          { handle: "standard", title: "Standard Delivery" },
+        ],
+      }),
+    );
+
+    expect(result.operations).toEqual([
+      {
+        deliveryOptionHide: {
+          deliveryOptionHandle: "eco",
+        },
+      },
+    ]);
   });
 });

@@ -1,5 +1,10 @@
 {
   "version": 1,
+  "productTags": [
+    "box_shipping",
+    "subs_box_mvp",
+    "bf22_exc"
+  ],
   "rules": [
     {
       "enabled": true,

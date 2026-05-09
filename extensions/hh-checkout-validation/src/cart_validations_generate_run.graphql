@@ -1,4 +1,4 @@
-query CartValidationsGenerateRunInput {
+query CartValidationsGenerateRunInput($productTags: [String!]! = []) {
   validation {
     metafield(namespace: "$app:hh-checkout-validation", key: "function-configuration") {
       jsonValue
@@ -22,9 +22,10 @@ query CartValidationsGenerateRunInput {
         __typename
         ... on ProductVariant {
           product {
-            boxShipping: hasAnyTag(tags: ["box_shipping"])
-            subsBoxMvp: hasAnyTag(tags: ["subs_box_mvp"])
-            bf22Exc: hasAnyTag(tags: ["bf22_exc"])
+            dynamicTags: hasTags(tags: $productTags) {
+              tag
+              hasTag
+            }
           }
         }
       }

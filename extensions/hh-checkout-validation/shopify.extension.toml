@@ -15,3 +15,7 @@ description = "t:description"
   [extensions.build]
   command = ""
   path = "dist/function.wasm"
+
+  [extensions.input.variables]
+  namespace = "$app:hh-function-input"
+  key = "input-variables"

@@ -28,7 +28,7 @@ function input({ config, discountCodes = [], lines = [], deliveryOptions }) {
   };
 }
 
-function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf22Exc = false } = {}) {
+function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf22Exc = false, dynamicTags = [] } = {}) {
   return {
     quantity,
     merchandise: {
@@ -36,6 +36,7 @@ function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf
         boxShipping,
         subsBoxMvp,
         bf22Exc,
+        dynamicTags,
       },
     },
   };
@@ -318,6 +319,56 @@ describe("shipping discount rules", () => {
         {
           deliveryOption: {
             handle: "express",
+          },
+        },
+      ],
+    });
+  });
+
+  test("uses product tags from dynamic function input variables", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          productTags: ["ops_campaign_tag"],
+          shippingDiscounts: [
+            {
+              id: "dynamic-tag-free-standard",
+              enabled: true,
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 1,
+                  match: "match",
+                  tags: ["ops_campaign_tag"],
+                },
+              },
+              rateSelector: {
+                type: "deliveryOptionsWhereTitleIncludes",
+                values: ["standard"],
+              },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "Free Shipping",
+              },
+            },
+          ],
+        },
+        lines: [productLine({ dynamicTags: [{ tag: "ops_campaign_tag", hasTag: true }] })],
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "express", title: "Express Shipping" },
+        ],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0]).toMatchObject({
+      message: "Free Shipping",
+      targets: [
+        {
+          deliveryOption: {
+            handle: "standard",
           },
         },
       ],
