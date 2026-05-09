@@ -8,10 +8,12 @@ This file is for Codex continuity. Keep it short, factual, and updated when the 
 - Local path: `C:\Users\Convidado\Documents\Codex\2026-05-04\hh-shipping-poc`
 - Branch: `main`
 - Dev Render URL: `https://hh-shipping.onrender.com`
-- Planned production Render URL: `https://hh-shipping-rules.onrender.com`
-- Render service ID: `srv-d7t5h5egvqtc73ab0u4g`
+- Dev Render service: `hh-shipping`, ID `srv-d7t5h5egvqtc73ab0u4g`
+- Production Render URL: `https://hh-shipping-rules.onrender.com`
+- Production Render service: `hh-shipping-rules`, ID `srv-d7trqs7avr4c73d10f30`
 - Shopify organization: Hey Harper Trading
-- Shopify app: `hh-shipping-poc`
+- Dev Shopify app: `hh-shipping-poc`
+- Production Shopify app: `HH Shipping Rules`
 - Test store: `grace-handmade-jewelry.myshopify.com`
 - Production stores:
   - `hey-harper-shop-us.myshopify.com`
@@ -75,11 +77,34 @@ Adding more tags currently requires a code change in both function GraphQL input
 
 ## Current Status
 
-The DSL and compiled JSON match correctly. EU Script Editor campaign parity is confirmed in checkout testing.
+As of 2026-05-09: production is frozen for the weekend. The user will return to production rollout with the team during the week. Continue new development on `main` / Grace only unless explicitly told otherwise.
+
+The DSL and compiled JSON match correctly. EU Script Editor campaign parity is confirmed in checkout testing. UK production app install/publish was tested enough for confidence; remaining UK rollout decisions are paused/frozen by the user.
 
 The only checkout behavior proven to work earlier came from hardcoded delivery fallback rules. Those fallback rules were removed intentionally. Missing config now means "hide nothing", not "run old defaults".
 
 The app now uses one primary action: `Save and publish`. Draft-only editing is deferred to v2.
+
+Grace state:
+
+- Grace intentionally has the empty default DSL published.
+- Empty DSL compiles to no hide rules, no shipping discounts, and no validations.
+- Use Grace for Phase F and later dev/testing.
+
+Production state:
+
+- Production branch/service has the first-install bootstrap fix: `Save and publish` creates the Delivery Customization if missing.
+- Production install still requires adding the `HH Shipping Rules` checkout app block in Checkout Editor and publishing store-specific DSL inside each store.
+- US/EU installs should be ready for the same flow when the user resumes production work.
+
+Completed phases:
+
+- Phase A: production safety docs/checklists.
+- Phase B: production DSL validation command.
+- Phase C: compiled + runtime golden tests.
+- Phase D: fail-open runtime hardening/tests.
+- Phase E: admin UI safety improvements on `main` / Grace.
+- Phase F: next dev phase on Grace; exact scope to confirm before coding.
 
 The checkout status warnings are meaningful:
 
@@ -87,14 +112,12 @@ The checkout status warnings are meaningful:
 - "Delivery customization config is missing": the active delivery customization has no `function-configuration` metafield.
 - "Checkout validation is not active": no active validation exists for `HH checkout validation POC`.
 
-Latest Shopify state observed:
+Important setup behavior:
 
-- Delivery customization exists and is enabled: `gid://shopify/DeliveryCustomization/45777164`, title `HH delivery customization POC`.
-- Delivery customization metafield was missing.
-- Discount function exists as an installed function, but no active automatic app discount titled `HH shipping discounts POC` existed.
-- App scopes included `write_delivery_customizations` and `write_discounts`, so scopes were not the obvious blocker.
-
-Most likely issue before the current fix: app web-component submit buttons did not reliably post `intent=publish`, causing the server action to save drafts without publishing to Shopify.
+- `Save and publish` creates/updates the automatic app shipping discount when `shippingDiscounts` is non-empty.
+- `Save and publish` creates/updates checkout validation when `validations` is non-empty.
+- `Save and publish` creates the delivery customization when missing, then writes `$app:hh-delivery-customization/function-configuration`.
+- The checkout app block must be placed near shipping methods so Checkout UI Extension discount-code sync and NOMORERUST inline warning can run.
 
 Shipping discount activation note: Shopify rejected `combinesWith.shippingDiscounts: true` for the automatic shipping app discount with the error "is not supported with these combines_with settings". Keep `orderDiscounts: true` and `productDiscounts: true`, but set `shippingDiscounts: false` for this POC so code/order discounts can combine with the app shipping discount without asking Shopify to combine it with other shipping discounts.
 
