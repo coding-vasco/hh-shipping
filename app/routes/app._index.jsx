@@ -530,8 +530,12 @@ export const action = async ({ request }) => {
     },
   });
 
+  if (intent === "preview") {
+    return { ok: true, message: "Rules compiled. Review the summary, then publish when ready." };
+  }
+
   if (intent !== "publish") {
-    return { ok: false, message: "Use Save and publish to update checkout." };
+    return { ok: false, message: "Review changes first, then publish reviewed rules to checkout." };
   }
 
   try {
@@ -846,6 +850,22 @@ function compiledRiskWarnings(config) {
   return warnings;
 }
 
+function publishStateText({ hasLocalChanges, publishedJson, rulesJson }) {
+  if (hasLocalChanges) return "not reviewed";
+  if (!publishedJson) return "not published";
+  return publishedJson === rulesJson ? "checkout matches reviewed rules" : "reviewed rules not published";
+}
+
+function publishImpactText(counts) {
+  const parts = [];
+  if (counts.hideRules > 0) parts.push(`${counts.hideRules} hide-rate rule${counts.hideRules === 1 ? "" : "s"}`);
+  if (counts.shippingDiscounts > 0) {
+    parts.push(`${counts.shippingDiscounts} shipping discount${counts.shippingDiscounts === 1 ? "" : "s"}`);
+  }
+  if (counts.validations > 0) parts.push(`${counts.validations} checkout validation${counts.validations === 1 ? "" : "s"}`);
+  return parts.length > 0 ? `Publishing updates ${parts.join(", ")}.` : "Publishing clears active app-managed rules.";
+}
+
 export default function Index() {
   const loaderData = useLoaderData();
   const actionData = useActionData();
@@ -872,6 +892,12 @@ export default function Index() {
   const campaignSummaries = useMemo(() => compiledCampaignSummaries(compiledConfig), [compiledConfig]);
   const riskWarnings = useMemo(() => compiledRiskWarnings(compiledConfig), [compiledConfig]);
   const previewJson = loaderData.rulesJson;
+  const publishState = publishStateText({
+    hasLocalChanges,
+    publishedJson: loaderData.publishedJson,
+    rulesJson: loaderData.rulesJson,
+  });
+  const publishImpact = publishImpactText(compiledCounts);
 
   useEffect(() => {
     if (actionData?.message) {
@@ -917,27 +943,27 @@ export default function Index() {
                 Validation: {loaderData.checkoutValidationStatus?.enabled ? "active" : "not active"}
               </s-text>
               <s-text>Unsaved changes: {hasLocalChanges ? "yes" : "no"}</s-text>
-              <s-text>Published: {loaderData.publishedJson ? "yes" : "not yet"}</s-text>
+              <s-text>Publish state: {publishState}</s-text>
             </s-stack>
           </s-box>
 
-          {riskWarnings.length > 0 ? (
-            <s-banner tone="warning" heading="Review before publishing">
-              <s-unordered-list>
-                {riskWarnings.map((warning) => (
-                  <s-list-item key={warning.title}>
-                    <s-text>
-                      {warning.title}: {warning.detail}
-                    </s-text>
-                  </s-list-item>
-                ))}
-              </s-unordered-list>
-            </s-banner>
-          ) : (
-            <s-banner tone="info" heading="No campaign risks detected">
-              <s-paragraph>The compiled ruleset has no active campaigns. Checkout should fail open.</s-paragraph>
-            </s-banner>
-          )}
+          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+            <s-stack gap="small">
+              <s-text type="emphasis">Publish impact</s-text>
+              <s-text>{hasLocalChanges ? "Review changes to refresh this summary before publishing." : publishImpact}</s-text>
+              {riskWarnings.length > 0 && !hasLocalChanges ? (
+                <s-unordered-list>
+                  {riskWarnings.map((warning) => (
+                    <s-list-item key={warning.title}>
+                      <s-text>
+                        {warning.title}: {warning.detail}
+                      </s-text>
+                    </s-list-item>
+                  ))}
+                </s-unordered-list>
+              ) : null}
+            </s-stack>
+          </s-box>
 
           {compiledCounts.shippingDiscounts > 0 && !loaderData.shippingDiscountStatus ? (
             <s-banner tone="warning" heading="Shipping discount is not active">
@@ -981,13 +1007,13 @@ export default function Index() {
                 <button
                   type="submit"
                   name="intent"
-                  value="publish"
+                  value="preview"
                   disabled={isSubmitting}
                   style={{
-                    background: "#303030",
+                    background: hasLocalChanges ? "#303030" : "#ffffff",
                     border: "1px solid #303030",
                     borderRadius: 6,
-                    color: "#ffffff",
+                    color: hasLocalChanges ? "#ffffff" : "#303030",
                     cursor: isSubmitting ? "default" : "pointer",
                     fontSize: 14,
                     fontWeight: 600,
@@ -995,7 +1021,27 @@ export default function Index() {
                     padding: "0 14px",
                   }}
                 >
-                  Save and publish
+                  Review changes
+                </button>
+                <button
+                  type="submit"
+                  name="intent"
+                  value="publish"
+                  disabled={isSubmitting || hasLocalChanges}
+                  title={hasLocalChanges ? "Review changes before publishing to checkout." : ""}
+                  style={{
+                    background: hasLocalChanges ? "#f1f1f1" : "#303030",
+                    border: "1px solid #303030",
+                    borderRadius: 6,
+                    color: hasLocalChanges ? "#6d7175" : "#ffffff",
+                    cursor: isSubmitting || hasLocalChanges ? "default" : "pointer",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    minHeight: 36,
+                    padding: "0 14px",
+                  }}
+                >
+                  Publish reviewed rules
                 </button>
               </s-stack>
             </s-stack>

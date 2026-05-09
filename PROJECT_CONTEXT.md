@@ -104,7 +104,15 @@ Completed phases:
 - Phase C: compiled + runtime golden tests.
 - Phase D: fail-open runtime hardening/tests.
 - Phase E: admin UI safety improvements on `main` / Grace.
-- Phase F: next dev phase on Grace; exact scope to confirm before coding.
+- Phase F: lightweight admin publish safety UX on `main` / Grace.
+
+Phase F UX behavior:
+
+- Editing DSL now makes the rules "not reviewed".
+- `Review changes` compiles and saves the DSL, refreshes the campaign summary and publish impact, but does not publish to checkout.
+- `Publish reviewed rules` is disabled while there are unreviewed local edits.
+- The publish impact panel stays compact; it shows counts and only the most important notes for reviewed configs.
+- Kill switches are intentionally deferred until a later phase.
 
 The checkout status warnings are meaningful:
 
