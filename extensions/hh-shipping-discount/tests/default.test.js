@@ -374,4 +374,104 @@ describe("shipping discount rules", () => {
       ],
     });
   });
+
+  test("discounts standard shipping for a newly declared Has_Variant product tag", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          productTags: ["box_shipping", "subs_box_mvp", "bf22_exc", "ACTIVEJEWELRY50", "Has_Variant"],
+          shippingDiscounts: [
+            {
+              id: "has-variant-free-standard",
+              enabled: true,
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 1,
+                  match: "match",
+                  tags: ["Has_Variant"],
+                },
+              },
+              rateSelector: {
+                type: "deliveryOptionsWhereTitleIncludes",
+                values: ["standard"],
+              },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "Free Shipping",
+              },
+            },
+          ],
+        },
+        lines: [productLine({ dynamicTags: [{ tag: "Has_Variant", hasTag: true }] })],
+        deliveryOptions: [
+          { handle: "standard-eco", title: "Standard eco Delivery (5 to 10 business days)" },
+          { handle: "standard", title: "Standard Shipping EU (2 to 7 business days)" },
+          { handle: "express", title: "DHL Express Delivery" },
+        ],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0]).toMatchObject({
+      message: "Free Shipping",
+      targets: [
+        {
+          deliveryOption: {
+            handle: "standard-eco",
+          },
+        },
+        {
+          deliveryOption: {
+            handle: "standard",
+          },
+        },
+      ],
+    });
+  });
+
+  test("matches dynamic product tags case-insensitively once Shopify returns them", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          productTags: ["Has_Variant"],
+          shippingDiscounts: [
+            {
+              id: "case-insensitive-dynamic-tag",
+              enabled: true,
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 1,
+                  match: "match",
+                  tags: ["has_variant"],
+                },
+              },
+              rateSelector: {
+                type: "deliveryOptionsWhereTitleIncludes",
+                values: ["standard"],
+              },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "Free Shipping",
+              },
+            },
+          ],
+        },
+        lines: [productLine({ dynamicTags: [{ tag: "Has_Variant", hasTag: true }] })],
+        deliveryOptions: [{ handle: "standard", title: "Standard Shipping EU" }],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0].targets).toEqual([
+      {
+        deliveryOption: {
+          handle: "standard",
+        },
+      },
+    ]);
+  });
 });

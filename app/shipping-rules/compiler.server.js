@@ -104,8 +104,9 @@ function slugify(value, fallback) {
 }
 
 function validateDeclaredTags(tags, declaredProductTags, path, errors) {
+  const normalizedDeclaredProductTags = new Set([...declaredProductTags].map((tag) => tag.toLowerCase()));
   for (const tag of tags) {
-    if (!declaredProductTags.has(tag)) {
+    if (!normalizedDeclaredProductTags.has(tag.toLowerCase())) {
       errors.push(`${path} references "${tag}", but settings.productTags does not include it.`);
     }
   }

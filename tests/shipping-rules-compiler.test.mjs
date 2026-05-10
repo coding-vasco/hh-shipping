@@ -142,6 +142,30 @@ describe("shipping rules DSL compiler", () => {
     assert.deepEqual(config.rules[0].conditions.lineProductTagQuantity.tags, ["new_ops_tag"]);
   });
 
+  test("allows selector product tag casing to differ from settings casing", () => {
+    const { config } = compileRulesScript(`
+      settings({ productTags: ["Has_Variant"] });
+      campaigns([
+        ShippingDiscount({
+          name: "Has variant free standard shipping",
+          condition: "all",
+          qualifiers: [
+            CartHasItemQualifier({
+              comparison: "greater_than_or_equal",
+              amount: 1,
+              selector: ProductTagSelector({ match: "match", tags: ["has_variant"] }),
+            }),
+          ],
+          rateSelector: RateNameSelector({ match: "include", names: ["standard"] }),
+          discount: PercentageDiscount({ percent: 100, message: "Free Shipping" }),
+        }),
+      ]);
+    `);
+
+    assert.deepEqual(config.productTags, ["Has_Variant"]);
+    assert.deepEqual(config.shippingDiscounts[0].conditions.lineProductTagQuantity.tags, ["has_variant"]);
+  });
+
   test("rejects product tags that are not declared in settings", () => {
     assert.throws(
       () =>

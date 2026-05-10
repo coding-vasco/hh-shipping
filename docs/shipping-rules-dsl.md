@@ -162,6 +162,10 @@ settings({
 Shopify Function input variables support up to 100 values. Keep this list to the tags
 that campaigns actually need.
 
+The app compares returned tags case-insensitively, so `Has_Variant` and `has_variant`
+match after Shopify returns the tag. For best results, write the tag in
+`settings.productTags` exactly as it appears on the product in Shopify admin.
+
 ### Shipping Country
 
 ```js
