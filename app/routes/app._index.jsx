@@ -380,6 +380,7 @@ async function publishShippingDiscountConfig(admin, config) {
       mutation UpdateShippingDiscount($id: ID!, $automaticAppDiscount: DiscountAutomaticAppInput!) {
         discountAutomaticAppUpdate(id: $id, automaticAppDiscount: $automaticAppDiscount) {
           automaticAppDiscount {
+            discountId
             title
             status
           }
@@ -394,6 +395,7 @@ async function publishShippingDiscountConfig(admin, config) {
       mutation CreateShippingDiscount($automaticAppDiscount: DiscountAutomaticAppInput!) {
         discountAutomaticAppCreate(automaticAppDiscount: $automaticAppDiscount) {
           automaticAppDiscount {
+            discountId
             title
             status
           }
@@ -412,6 +414,40 @@ async function publishShippingDiscountConfig(admin, config) {
   assertNoGraphqlErrors(json);
   const payload = existingId ? json.data?.discountAutomaticAppUpdate : json.data?.discountAutomaticAppCreate;
   const errors = payload?.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new Error(errors.map((error) => error.message).join("; "));
+  }
+
+  const discount = payload?.automaticAppDiscount;
+  const discountId = existingId ?? discount?.discountId;
+  const status = discount?.status ?? existing?.status;
+  if (discountId && status !== "ACTIVE") {
+    await activateShippingDiscount(admin, discountId);
+  }
+}
+
+async function activateShippingDiscount(admin, id) {
+  const response = await admin.graphql(
+    `#graphql
+      mutation ActivateShippingDiscount($id: ID!) {
+        discountAutomaticActivate(id: $id) {
+          automaticDiscountNode {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      variables: { id },
+    },
+  );
+  const json = await response.json();
+  assertNoGraphqlErrors(json);
+  const errors = json.data?.discountAutomaticActivate?.userErrors ?? [];
   if (errors.length > 0) {
     throw new Error(errors.map((error) => error.message).join("; "));
   }
