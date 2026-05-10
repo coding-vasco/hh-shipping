@@ -23,6 +23,17 @@ const CHECKOUT_VALIDATION_TITLE = "HH checkout validation POC";
 const CHECKOUT_UI_NAMESPACE = "$app:hh-checkout-ui";
 const FUNCTION_INPUT_NAMESPACE = "$app:hh-function-input";
 const FUNCTION_INPUT_KEY = "input-variables";
+const EMPTY_RULES_JSON = JSON.stringify(
+  {
+    version: 1,
+    productTags: ["box_shipping", "subs_box_mvp", "bf22_exc"],
+    rules: [],
+    shippingDiscounts: [],
+    validations: [],
+  },
+  null,
+  2,
+);
 const DSL_EXAMPLES = [
   {
     title: "Code hides rates",
@@ -579,6 +590,23 @@ export const action = async ({ request }) => {
   const intent = formData.get("intent");
   const rulesScript = String(formData.get("rulesScript") ?? "");
 
+  if (intent === "unpublish") {
+    try {
+      await publishDeliveryConfig(admin, DEFAULT_RULES);
+      await publishShippingDiscountConfig(admin, DEFAULT_RULES);
+      await publishCheckoutValidationConfig(admin, DEFAULT_RULES);
+      await publishCheckoutUiConfig(admin, DEFAULT_RULES);
+      await db.shippingRulesConfig.update({
+        where: { shop: session.shop },
+        data: { publishedJson: prettyJson(DEFAULT_RULES) },
+      });
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+
+    return { ok: true, message: "Checkout rules unpublished. The saved DSL was kept for review or later publishing." };
+  }
+
   let compiled;
   try {
     compiled = compileRulesScript(rulesScript);
@@ -858,24 +886,6 @@ function discountSummary(discount) {
   return `${discount.type} discount`;
 }
 
-function campaignOutcomeLabel(type) {
-  switch (type) {
-    case "HideRates":
-      return "Hide rates";
-    case "ShippingDiscount":
-      return "Shipping discount";
-    case "CartValidation":
-      return "Cart validation";
-    default:
-      return type;
-  }
-}
-
-function campaignStatusLabel(campaign) {
-  if (campaign.risk.length > 0) return "Warning";
-  return "Ready";
-}
-
 function campaignVisual(type) {
   switch (type) {
     case "HideRates":
@@ -927,6 +937,22 @@ function groupCampaignsByType(campaigns) {
   }
 
   return groups;
+}
+
+function campaignStatusElement(campaign) {
+  const isWarning = campaign.risk.length > 0;
+  return (
+    <span
+      style={{
+        color: isWarning ? "#b7791f" : "#008060",
+        fontSize: 13,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {isWarning ? "⚠️ Warning" : "✓ Ready"}
+    </span>
+  );
 }
 
 function compiledCampaignSummaries(config) {
@@ -1023,65 +1049,36 @@ function campaignTypeCounts(campaigns) {
   );
 }
 
-function compiledRiskWarnings(config) {
-  const warnings = [];
-  const allRules = [
-    ...(config.rules ?? []),
-    ...(config.shippingDiscounts ?? []),
-    ...(config.validations ?? []),
-  ];
-  const codeRules = allRules.filter(
-    (rule) => rule.conditions?.discountCodeIncludes || rule.conditions?.discountCodeDoesNotInclude,
-  );
-  const hideAllRules = (config.rules ?? []).filter((rule) =>
-    (rule.actions ?? []).some((action) => action.type === "hideAllDeliveryOptions"),
-  );
-
-  if (codeRules.length > 0) {
-    warnings.push({
-      title: "Discount-code rules depend on checkout sync",
-      detail: `${codeRules.length} compiled rule${codeRules.length === 1 ? "" : "s"} use _hh_discount_codes from the Checkout UI Extension.`,
-    });
+function publishState({ hasLocalChanges, publishedJson, rulesJson }) {
+  if (publishedJson === rulesJson && publishedJson !== EMPTY_RULES_JSON) {
+    return {
+      label: "Published",
+      detail: "Checkout is using the reviewed DSL campaigns.",
+      color: "#008060",
+      background: "#effbf5",
+      border: "#a8e3c3",
+    };
   }
 
-  if (hideAllRules.length > 0) {
-    warnings.push({
-      title: "Some rules can hide every shipping rate",
-      detail: hideAllRules.map((rule) => rule.description || rule.id).join(", "),
-    });
+  if (hasLocalChanges || publishedJson === EMPTY_RULES_JSON || (!publishedJson && rulesJson === EMPTY_RULES_JSON)) {
+    return {
+      label: "Unpublished",
+      detail: hasLocalChanges
+        ? "The editor has changes that have not been reviewed yet."
+        : "Checkout is using no app-managed campaigns.",
+      color: "#b42318",
+      background: "#fff4f2",
+      border: "#ffd6cf",
+    };
   }
 
-  if ((config.shippingDiscounts ?? []).length > 0) {
-    warnings.push({
-      title: "Shipping discounts depend on Shopify combination settings",
-      detail: "The app automatic shipping discount must be active, and matching discount codes must combine with shipping discounts.",
-    });
-  }
-
-  if ((config.validations ?? []).length > 0) {
-    warnings.push({
-      title: "Checkout validations can block checkout",
-      detail: (config.validations ?? []).map((rule) => rule.description || rule.id).join(", "),
-    });
-  }
-
-  return warnings;
-}
-
-function publishStateText({ hasLocalChanges, publishedJson, rulesJson }) {
-  if (hasLocalChanges) return "not reviewed";
-  if (!publishedJson) return "not published";
-  return publishedJson === rulesJson ? "checkout matches reviewed rules" : "reviewed rules not published";
-}
-
-function publishImpactText(counts) {
-  const parts = [];
-  if (counts.hideRules > 0) parts.push(`${counts.hideRules} hide-rate rule${counts.hideRules === 1 ? "" : "s"}`);
-  if (counts.shippingDiscounts > 0) {
-    parts.push(`${counts.shippingDiscounts} shipping discount${counts.shippingDiscounts === 1 ? "" : "s"}`);
-  }
-  if (counts.validations > 0) parts.push(`${counts.validations} checkout validation${counts.validations === 1 ? "" : "s"}`);
-  return parts.length > 0 ? `Publishing updates ${parts.join(", ")}.` : "Publishing clears active app-managed rules.";
+  return {
+    label: "Reviewed",
+    detail: "The DSL has been reviewed, but checkout is not using this exact version yet.",
+    color: "#0b6bcb",
+    background: "#f0f7ff",
+    border: "#c6def7",
+  };
 }
 
 export default function Index() {
@@ -1101,13 +1098,6 @@ export default function Index() {
       return { version: 1, rules: [], shippingDiscounts: [], validations: [] };
     }
   }, [loaderData.rulesJson]);
-  const compiledCounts = useMemo(() => {
-    return {
-      hideRules: compiledConfig.rules?.length ?? 0,
-      shippingDiscounts: compiledConfig.shippingDiscounts?.length ?? 0,
-      validations: compiledConfig.validations?.length ?? 0,
-    };
-  }, [compiledConfig]);
   const campaignSummaries = useMemo(() => compiledCampaignSummaries(compiledConfig), [compiledConfig]);
   const campaignTypeTotals = useMemo(() => campaignTypeCounts(campaignSummaries), [campaignSummaries]);
   const visibleCampaignSummaries = useMemo(() => {
@@ -1116,14 +1106,12 @@ export default function Index() {
     return campaignSummaries.filter((campaign) => campaignSearchText(campaign).includes(needle));
   }, [campaignSearch, campaignSummaries]);
   const visibleCampaignGroups = useMemo(() => groupCampaignsByType(visibleCampaignSummaries), [visibleCampaignSummaries]);
-  const riskWarnings = useMemo(() => compiledRiskWarnings(compiledConfig), [compiledConfig]);
   const previewJson = loaderData.rulesJson;
-  const publishState = publishStateText({
+  const currentPublishState = publishState({
     hasLocalChanges,
     publishedJson: loaderData.publishedJson,
     rulesJson: loaderData.rulesJson,
   });
-  const publishImpact = publishImpactText(compiledCounts);
 
   useEffect(() => {
     if (actionData?.message) {
@@ -1154,44 +1142,42 @@ export default function Index() {
             cart states are affected.
           </s-paragraph>
 
-          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-            <s-stack direction="inline" gap="base">
-              <s-text>Hide rules: {compiledCounts.hideRules}</s-text>
-              <s-text>Shipping discounts: {compiledCounts.shippingDiscounts}</s-text>
-              <s-text>Validations: {compiledCounts.validations}</s-text>
-              <s-text>
-                Delivery config: {loaderData.deliveryCustomizationStatus?.metafield ? "published" : "missing"}
-              </s-text>
-              <s-text>
-                Discount function: {loaderData.shippingDiscountStatus?.status ?? "not active"}
-              </s-text>
-              <s-text>
-                Validation: {loaderData.checkoutValidationStatus?.enabled ? "active" : "not active"}
-              </s-text>
-              <s-text>Unsaved changes: {hasLocalChanges ? "yes" : "no"}</s-text>
-              <s-text>Publish state: {publishState}</s-text>
-            </s-stack>
-          </s-box>
+          <div
+            style={{
+              background: currentPublishState.background,
+              border: `1px solid ${currentPublishState.border}`,
+              borderRadius: 8,
+              padding: 16,
+            }}
+          >
+            <div style={{ alignItems: "center", display: "flex", gap: 12 }}>
+              <span
+                aria-hidden="true"
+                style={{
+                  background: currentPublishState.color,
+                  borderRadius: 99,
+                  color: "#ffffff",
+                  display: "inline-flex",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  height: 26,
+                  justifyContent: "center",
+                  lineHeight: "26px",
+                  width: 26,
+                }}
+              >
+                {currentPublishState.label === "Published" ? "✓" : currentPublishState.label === "Reviewed" ? "i" : "!"}
+              </span>
+              <div>
+                <div style={{ color: currentPublishState.color, fontSize: 14, fontWeight: 800 }}>
+                  {currentPublishState.label}
+                </div>
+                <div style={{ color: "#4a4f55", fontSize: 13 }}>{currentPublishState.detail}</div>
+              </div>
+            </div>
+          </div>
 
-          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-            <s-stack gap="small">
-              <s-text type="emphasis">Publish impact</s-text>
-              <s-text>{hasLocalChanges ? "Review changes to refresh this summary before publishing." : publishImpact}</s-text>
-              {riskWarnings.length > 0 && !hasLocalChanges ? (
-                <s-unordered-list>
-                  {riskWarnings.map((warning) => (
-                    <s-list-item key={warning.title}>
-                      <s-text>
-                        {warning.title}: {warning.detail}
-                      </s-text>
-                    </s-list-item>
-                  ))}
-                </s-unordered-list>
-              ) : null}
-            </s-stack>
-          </s-box>
-
-          {compiledCounts.shippingDiscounts > 0 && !loaderData.shippingDiscountStatus ? (
+          {campaignTypeTotals.ShippingDiscount > 0 && !loaderData.shippingDiscountStatus ? (
             <s-banner tone="warning" heading="Shipping discount is not active">
               <s-paragraph>
                 Publish to checkout to create the automatic app discount that invokes the HH Shipping Discount
@@ -1200,7 +1186,7 @@ export default function Index() {
             </s-banner>
           ) : null}
 
-          {compiledCounts.validations > 0 && !loaderData.checkoutValidationStatus?.enabled ? (
+          {campaignTypeTotals.CartValidation > 0 && !loaderData.checkoutValidationStatus?.enabled ? (
             <s-banner tone="warning" heading="Checkout validation is not active">
               <s-paragraph>
                 Save and publish to create the checkout validation that shows blocking customer messages.
@@ -1229,7 +1215,7 @@ export default function Index() {
                 </s-banner>
               ) : null}
 
-              <s-stack direction="inline" gap="base">
+              <div style={{ alignItems: "center", display: "flex", gap: 12 }}>
                 <button
                   type="submit"
                   name="intent"
@@ -1269,7 +1255,27 @@ export default function Index() {
                 >
                   Publish reviewed rules
                 </button>
-              </s-stack>
+                <button
+                  type="submit"
+                  name="intent"
+                  value="unpublish"
+                  disabled={isSubmitting}
+                  style={{
+                    background: "#b42318",
+                    border: "1px solid #b42318",
+                    borderRadius: 6,
+                    color: "#ffffff",
+                    cursor: isSubmitting ? "default" : "pointer",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    marginLeft: "auto",
+                    minHeight: 36,
+                    padding: "0 14px",
+                  }}
+                >
+                  Unpublish campaigns
+                </button>
+              </div>
             </s-stack>
           </Form>
         </s-stack>
@@ -1357,10 +1363,6 @@ export default function Index() {
                     width: "100%",
                   }}
                 />
-                <s-text>
-                  Showing {visibleCampaignSummaries.length} of {campaignSummaries.length} compiled campaign
-                  {campaignSummaries.length === 1 ? "" : "s"}.
-                </s-text>
               </s-stack>
             </div>
 
@@ -1441,19 +1443,28 @@ export default function Index() {
                             <s-stack gap="small">
                               <s-stack direction="inline" gap="base">
                                 <s-text type="emphasis">{campaign.name}</s-text>
-                                <s-text>{campaignOutcomeLabel(campaign.type)}</s-text>
-                                <s-text>{campaignStatusLabel(campaign)}</s-text>
+                                {campaignStatusElement(campaign)}
                               </s-stack>
-                              <s-text>When: {campaign.when}</s-text>
-                              <s-text>Outcome: {campaign.outcome}</s-text>
-                              <s-text>Affects: {campaign.affects}</s-text>
-                              <s-text>Customer message: {campaign.customerMessage}</s-text>
                               <s-text>
-                                Dependencies:{" "}
+                                <strong>When:</strong> {campaign.when}
+                              </s-text>
+                              <s-text>
+                                <strong>Outcome:</strong> {campaign.outcome}
+                              </s-text>
+                              <s-text>
+                                <strong>Affects:</strong> {campaign.affects}
+                              </s-text>
+                              <s-text>
+                                <strong>Customer message:</strong> {campaign.customerMessage}
+                              </s-text>
+                              <s-text>
+                                <strong>Dependencies:</strong>{" "}
                                 {campaign.dependencies.length > 0 ? campaign.dependencies.join("; ") : "None"}
                               </s-text>
                               {campaign.risk.length > 0 ? (
-                                <s-text>Check carefully: {campaign.risk.join("; ")}</s-text>
+                                <s-text>
+                                  <strong>Check carefully:</strong> {campaign.risk.join("; ")}
+                                </s-text>
                               ) : null}
                             </s-stack>
                           </div>
