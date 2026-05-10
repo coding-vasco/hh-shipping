@@ -21,8 +21,11 @@ const SHIPPING_DISCOUNT_TITLE = "HH shipping discounts POC";
 const CHECKOUT_VALIDATION_NAMESPACE = "$app:hh-checkout-validation";
 const CHECKOUT_VALIDATION_TITLE = "HH checkout validation POC";
 const CHECKOUT_UI_NAMESPACE = "$app:hh-checkout-ui";
+const ADMIN_NAMESPACE = "$app:hh-shipping-admin";
+const DRAFTS_KEY = "dsl-drafts";
 const FUNCTION_INPUT_NAMESPACE = "$app:hh-function-input";
 const FUNCTION_INPUT_KEY = "input-variables";
+const MAX_DSL_DRAFTS = 10;
 const EMPTY_RULES_JSON = JSON.stringify(
   {
     version: 1,
@@ -84,10 +87,116 @@ function assertNoGraphqlErrors(json) {
   }
 }
 
+function createDraftId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeDrafts(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((draft) => draft && typeof draft === "object" && typeof draft.dsl === "string")
+    .map((draft) => ({
+      id: typeof draft.id === "string" && draft.id ? draft.id : createDraftId(),
+      name: typeof draft.name === "string" && draft.name.trim() ? draft.name.trim() : "Untitled draft",
+      dsl: draft.dsl,
+      createdAt: typeof draft.createdAt === "string" ? draft.createdAt : new Date().toISOString(),
+      updatedAt: typeof draft.updatedAt === "string" ? draft.updatedAt : new Date().toISOString(),
+    }))
+    .slice(0, MAX_DSL_DRAFTS);
+}
+
 async function getDeliveryCustomizationId(admin) {
   const preferred = await getDeliveryCustomizationStatus(admin);
 
   return preferred?.id ?? createDeliveryCustomization(admin);
+}
+
+async function getShopId(admin) {
+  const response = await admin.graphql(`#graphql
+    query ShopId {
+      shop {
+        id
+      }
+    }
+  `);
+  const json = await response.json();
+  assertNoGraphqlErrors(json);
+  const ownerId = json.data?.shop?.id;
+  if (!ownerId) {
+    throw new Error("Could not find the shop.");
+  }
+
+  return ownerId;
+}
+
+async function getDslDrafts(admin) {
+  const response = await admin.graphql(`#graphql
+    query DslDrafts {
+      shop {
+        metafield(namespace: "$app:hh-shipping-admin", key: "dsl-drafts") {
+          value
+        }
+      }
+    }
+  `);
+  const json = await response.json();
+  assertNoGraphqlErrors(json);
+
+  const value = json.data?.shop?.metafield?.value;
+  if (!value) return [];
+
+  try {
+    return normalizeDrafts(JSON.parse(value));
+  } catch {
+    return [];
+  }
+}
+
+async function saveDslDrafts(admin, drafts) {
+  const ownerId = await getShopId(admin);
+  const normalizedDrafts = normalizeDrafts(drafts);
+  const response = await admin.graphql(
+    `#graphql
+      mutation SaveDslDrafts($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          metafields {
+            id
+            namespace
+            key
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      variables: {
+        metafields: [
+          {
+            ownerId,
+            namespace: ADMIN_NAMESPACE,
+            key: DRAFTS_KEY,
+            type: "json",
+            value: JSON.stringify(normalizedDrafts),
+          },
+        ],
+      },
+    },
+  );
+  const json = await response.json();
+  assertNoGraphqlErrors(json);
+  const errors = json.data?.metafieldsSet?.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new Error(errors.map((error) => error.message).join("; "));
+  }
+
+  return normalizedDrafts;
 }
 
 async function getDeliveryCustomizationStatus(admin) {
@@ -210,7 +319,6 @@ function shippingDiscountInput(config) {
     title: SHIPPING_DISCOUNT_TITLE,
     functionHandle: "hh-shipping-discount",
     discountClasses: ["SHIPPING"],
-    startsAt: new Date().toISOString(),
     appliesOnOneTimePurchase: true,
     appliesOnSubscription: true,
     combinesWith: {
@@ -264,11 +372,6 @@ async function getShippingDiscountStatus(admin) {
 }
 
 async function publishShippingDiscountConfig(admin, config) {
-  if (!Array.isArray(config.shippingDiscounts) || config.shippingDiscounts.length === 0) {
-    await deactivateShippingDiscount(admin);
-    return;
-  }
-
   const existing = await getShippingDiscountStatus(admin);
   const existingId = existing?.discountId ?? null;
   const automaticAppDiscount = shippingDiscountInput(config);
@@ -309,36 +412,6 @@ async function publishShippingDiscountConfig(admin, config) {
   assertNoGraphqlErrors(json);
   const payload = existingId ? json.data?.discountAutomaticAppUpdate : json.data?.discountAutomaticAppCreate;
   const errors = payload?.userErrors ?? [];
-  if (errors.length > 0) {
-    throw new Error(errors.map((error) => error.message).join("; "));
-  }
-}
-
-async function deactivateShippingDiscount(admin) {
-  const existing = await getShippingDiscountStatus(admin);
-  if (!existing?.discountId || existing.status !== "ACTIVE") return;
-
-  const response = await admin.graphql(
-    `#graphql
-      mutation DeactivateShippingDiscount($id: ID!) {
-        discountAutomaticDeactivate(id: $id) {
-          automaticDiscountNode {
-            id
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `,
-    {
-      variables: { id: existing.discountId },
-    },
-  );
-  const json = await response.json();
-  assertNoGraphqlErrors(json);
-  const errors = json.data?.discountAutomaticDeactivate?.userErrors ?? [];
   if (errors.length > 0) {
     throw new Error(errors.map((error) => error.message).join("; "));
   }
@@ -480,19 +553,7 @@ async function disableCheckoutValidation(admin) {
 }
 
 async function publishCheckoutUiConfig(admin, config) {
-  const shopResponse = await admin.graphql(`#graphql
-    query ShopForCheckoutUiConfig {
-      shop {
-        id
-      }
-    }
-  `);
-  const shopJson = await shopResponse.json();
-  assertNoGraphqlErrors(shopJson);
-  const ownerId = shopJson.data?.shop?.id;
-  if (!ownerId) {
-    throw new Error("Could not find the shop to publish checkout UI messages.");
-  }
+  const ownerId = await getShopId(admin);
 
   const response = await admin.graphql(
     `#graphql
@@ -577,6 +638,7 @@ export const loader = async ({ request }) => {
     rulesScript,
     rulesJson,
     publishedJson: config.publishedJson,
+    dslDrafts: await getDslDrafts(admin),
     deliveryCustomizationStatus: await getDeliveryCustomizationStatus(admin),
     shippingDiscountStatus: await getShippingDiscountStatus(admin),
     checkoutValidationStatus: await getCheckoutValidationStatus(admin),
@@ -589,6 +651,69 @@ export const action = async ({ request }) => {
   const formData = await request.formData();
   const intent = formData.get("intent");
   const rulesScript = String(formData.get("rulesScript") ?? "");
+
+  if (intent === "saveDraft") {
+    const draftId = String(formData.get("draftId") ?? "");
+    const draftNameInput = String(formData.get("draftName") ?? "").trim();
+    const now = new Date().toISOString();
+    const draftName = draftNameInput || `Draft ${new Date().toLocaleString("en-GB")}`;
+
+    try {
+      const drafts = await getDslDrafts(admin);
+      const existingIndex = drafts.findIndex((draft) => draft.id === draftId);
+      let nextDrafts;
+
+      if (existingIndex >= 0) {
+        nextDrafts = drafts.map((draft, index) =>
+          index === existingIndex
+            ? {
+                ...draft,
+                name: draftName,
+                dsl: rulesScript,
+                updatedAt: now,
+              }
+            : draft,
+        );
+      } else {
+        if (drafts.length >= MAX_DSL_DRAFTS) {
+          return { ok: false, message: `You can store up to ${MAX_DSL_DRAFTS} DSL drafts. Delete one before saving another.` };
+        }
+        nextDrafts = [
+          {
+            id: createDraftId(),
+            name: draftName,
+            dsl: rulesScript,
+            createdAt: now,
+            updatedAt: now,
+          },
+          ...drafts,
+        ];
+      }
+
+      await saveDslDrafts(admin, nextDrafts);
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+
+    return { ok: true, message: "DSL draft saved. Checkout was not changed." };
+  }
+
+  if (intent === "deleteDraft") {
+    const draftId = String(formData.get("draftId") ?? "");
+    if (!draftId) return { ok: false, message: "Choose a draft to delete." };
+
+    try {
+      const drafts = await getDslDrafts(admin);
+      await saveDslDrafts(
+        admin,
+        drafts.filter((draft) => draft.id !== draftId),
+      );
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+
+    return { ok: true, message: "DSL draft deleted. Checkout was not changed." };
+  }
 
   if (intent === "unpublish") {
     try {
@@ -1088,6 +1213,9 @@ export default function Index() {
   const shopify = useAppBridge();
   const [rulesScript, setRulesScript] = useState(loaderData.rulesScript);
   const [campaignSearch, setCampaignSearch] = useState("");
+  const dslDrafts = useMemo(() => loaderData.dslDrafts ?? [], [loaderData.dslDrafts]);
+  const [selectedDraftId, setSelectedDraftId] = useState("");
+  const [draftName, setDraftName] = useState("");
 
   const isSubmitting = navigation.state === "submitting";
   const hasLocalChanges = rulesScript !== loaderData.rulesScript;
@@ -1120,6 +1248,18 @@ export default function Index() {
       });
     }
   }, [actionData, shopify]);
+
+  useEffect(() => {
+    const selectedDraft = dslDrafts.find((draft) => draft.id === selectedDraftId);
+    if (selectedDraft) {
+      setDraftName(selectedDraft.name);
+    } else if (selectedDraftId) {
+      setSelectedDraftId("");
+      setDraftName("");
+    }
+  }, [dslDrafts, selectedDraftId]);
+
+  const selectedDraft = dslDrafts.find((draft) => draft.id === selectedDraftId);
 
   return (
     <s-page heading="Shipping Rules">
@@ -1204,6 +1344,123 @@ export default function Index() {
 
           <Form method="post">
             <s-stack gap="base">
+              <input type="hidden" name="draftId" value={selectedDraftId} />
+              <input type="hidden" name="draftName" value={draftName} />
+
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #d8dee6",
+                  borderRadius: 8,
+                  padding: 14,
+                }}
+              >
+                <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(180px, 1fr) minmax(180px, 1fr) auto auto auto" }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ color: "#303030", fontSize: 12, fontWeight: 700 }}>Stored drafts</span>
+                    <select
+                      value={selectedDraftId}
+                      onChange={(event) => setSelectedDraftId(event.currentTarget.value)}
+                      style={{
+                        border: "1px solid #b9c0ca",
+                        borderRadius: 6,
+                        minHeight: 36,
+                        padding: "0 10px",
+                      }}
+                    >
+                      <option value="">New draft</option>
+                      {dslDrafts.map((draft) => (
+                        <option key={draft.id} value={draft.id}>
+                          {draft.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ color: "#303030", fontSize: 12, fontWeight: 700 }}>Draft name</span>
+                    <input
+                      type="text"
+                      value={draftName}
+                      onChange={(event) => setDraftName(event.currentTarget.value)}
+                      placeholder="Name this draft"
+                      style={{
+                        border: "1px solid #b9c0ca",
+                        borderRadius: 6,
+                        minHeight: 36,
+                        padding: "0 10px",
+                      }}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    disabled={!selectedDraft}
+                    onClick={() => selectedDraft && setRulesScript(selectedDraft.dsl)}
+                    style={{
+                      alignSelf: "end",
+                      background: selectedDraft ? "#ffffff" : "#f1f1f1",
+                      border: "1px solid #303030",
+                      borderRadius: 6,
+                      color: selectedDraft ? "#303030" : "#6d7175",
+                      cursor: selectedDraft ? "pointer" : "default",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      minHeight: 36,
+                      padding: "0 14px",
+                    }}
+                  >
+                    Load
+                  </button>
+
+                  <button
+                    type="submit"
+                    name="intent"
+                    value="saveDraft"
+                    disabled={isSubmitting}
+                    style={{
+                      alignSelf: "end",
+                      background: "#303030",
+                      border: "1px solid #303030",
+                      borderRadius: 6,
+                      color: "#ffffff",
+                      cursor: isSubmitting ? "default" : "pointer",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      minHeight: 36,
+                      padding: "0 14px",
+                    }}
+                  >
+                    Save draft
+                  </button>
+
+                  <button
+                    type="submit"
+                    name="intent"
+                    value="deleteDraft"
+                    disabled={isSubmitting || !selectedDraft}
+                    style={{
+                      alignSelf: "end",
+                      background: "#ffffff",
+                      border: "1px solid #b42318",
+                      borderRadius: 6,
+                      color: selectedDraft ? "#b42318" : "#6d7175",
+                      cursor: isSubmitting || !selectedDraft ? "default" : "pointer",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      minHeight: 36,
+                      padding: "0 14px",
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+                <div style={{ color: "#5c6470", fontSize: 12, marginTop: 8 }}>
+                  Drafts are stored in Shopify for this shop. Loading or saving a draft does not publish checkout rules.
+                  {` ${dslDrafts.length}/${MAX_DSL_DRAFTS} saved.`}
+                </div>
+              </div>
+
               <DslEditor value={rulesScript} onChange={setRulesScript} />
 
               {actionData ? (

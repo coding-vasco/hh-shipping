@@ -42,7 +42,7 @@ Production preparation:
 - Delivery Customization Function: reads `_hh_discount_codes`, cart data, delivery option title/handle, product tag booleans, and a delivery customization metafield config. It handles `HideRates` campaigns.
 - Discount Function: reads `_hh_discount_codes`, cart data, delivery option title/handle, product tag booleans, and its automatic app discount metafield config. It handles `ShippingDiscount` campaigns.
 - Cart and Checkout Validation Function: reads `_hh_discount_codes`, cart subtotal, product tag booleans, and its validation metafield config. It handles `CartValidation` campaigns such as NOMORERUST checkout blocking messages.
-- Embedded app: stores the editable DSL in Prisma, compiles it to JSON, and publishes config to Shopify.
+- Embedded app: stores the editable working DSL in Prisma, stores up to 10 named DSL drafts in Shopify app-owned shop metafields, compiles DSL to JSON, and publishes config to Shopify.
 
 ## DSL
 
@@ -82,7 +82,7 @@ The DSL and compiled JSON match correctly. EU Script Editor campaign parity is c
 
 The only checkout behavior proven to work earlier came from hardcoded delivery fallback rules. Those fallback rules were removed intentionally. Missing config now means "hide nothing", not "run old defaults".
 
-The app now uses one primary action: `Save and publish`. Draft-only editing is deferred to v2.
+The app now separates draft storage from checkout publishing. Drafts are saved in Shopify app-owned metafield `$app:hh-shipping-admin/dsl-drafts` and do not change checkout behavior until a user reviews and publishes rules.
 
 Grace state:
 
@@ -111,6 +111,8 @@ Phase F UX behavior:
 - Editing DSL now makes the rules "not reviewed".
 - `Review changes` compiles and saves the DSL, refreshes the campaign summary and publish impact, but does not publish to checkout.
 - `Publish reviewed rules` is disabled while there are unreviewed local edits.
+- `Save draft`, `Load`, and `Delete` manage up to 10 named DSL drafts for the current shop. These drafts survive app deploys because they live in Shopify metafields, not Render memory.
+- `Unpublish campaigns` keeps the visible DSL in the editor but publishes empty fail-open checkout config.
 - The publish impact panel stays compact; it shows counts and only the most important notes for reviewed configs.
 - Kill switches are intentionally deferred until a later phase.
 
@@ -122,7 +124,8 @@ The checkout status warnings are meaningful:
 
 Important setup behavior:
 
-- `Save and publish` creates/updates the automatic app shipping discount when `shippingDiscounts` is non-empty.
+- `Save and publish` creates/updates the automatic app shipping discount with the compiled config, including an empty `shippingDiscounts` array when no shipping discounts are active.
+- The app does not intentionally set `startsAt` or `endsAt` on the automatic app shipping discount. This avoids update failures caused by expired automatic discounts.
 - `Save and publish` creates/updates checkout validation when `validations` is non-empty.
 - `Save and publish` creates the delivery customization when missing, then writes `$app:hh-delivery-customization/function-configuration`.
 - The checkout app block must be placed near shipping methods so Checkout UI Extension discount-code sync and NOMORERUST inline warning can run.
@@ -175,7 +178,7 @@ Use `shopify app execute --query-file .\some-query.graphql --store grace-handmad
 
 ## Hardening Decisions
 
-- If `shippingDiscounts` compiles to an empty array, the app deactivates the existing `HH shipping discounts POC` automatic discount.
+- If `shippingDiscounts` compiles to an empty array, the app keeps the existing `HH shipping discounts POC` automatic discount object but writes an empty config so it has no checkout effect.
 - If `validations` compiles to an empty array, the app disables the existing `HH checkout validation POC` validation.
 - Delivery customization publishing is deterministic: it targets title `HH delivery customization POC` only and no longer falls back to the first enabled customization.
 - Dynamic product tags are supported through Shopify Function input-query variables. Add campaign tags to `settings({ productTags: [...] })` before referencing them in `ProductTagSelector`.
