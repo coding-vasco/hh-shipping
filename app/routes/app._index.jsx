@@ -876,6 +876,59 @@ function campaignStatusLabel(campaign) {
   return "Ready";
 }
 
+function campaignVisual(type) {
+  switch (type) {
+    case "HideRates":
+      return {
+        accent: "#b42318",
+        background: "#fff4f2",
+        border: "#ffd6cf",
+        icon: "x",
+        label: "Hide Rates",
+      };
+    case "ShippingDiscount":
+      return {
+        accent: "#0b6bcb",
+        background: "#f0f7ff",
+        border: "#c6def7",
+        icon: "%",
+        label: "Shipping Discount",
+      };
+    case "CartValidation":
+      return {
+        accent: "#8a6116",
+        background: "#fff8e8",
+        border: "#f1d79d",
+        icon: "!",
+        label: "Cart Validation",
+      };
+    default:
+      return {
+        accent: "#5c5f62",
+        background: "#f6f6f7",
+        border: "#d2d5d8",
+        icon: "i",
+        label: type,
+      };
+  }
+}
+
+function groupCampaignsByType(campaigns) {
+  const groups = [
+    { type: "HideRates", description: "Hide delivery options when campaign conditions match.", campaigns: [] },
+    { type: "ShippingDiscount", description: "Apply shipping discounts to selected delivery options.", campaigns: [] },
+    { type: "CartValidation", description: "Block checkout and show a customer-facing message.", campaigns: [] },
+  ];
+  const byType = new Map(groups.map((group) => [group.type, group]));
+
+  for (const campaign of campaigns) {
+    const group = byType.get(campaign.type);
+    if (group) group.campaigns.push(campaign);
+  }
+
+  return groups;
+}
+
 function compiledCampaignSummaries(config) {
   const rows = [];
   const seen = new Set();
@@ -1062,6 +1115,7 @@ export default function Index() {
     if (!needle) return campaignSummaries;
     return campaignSummaries.filter((campaign) => campaignSearchText(campaign).includes(needle));
   }, [campaignSearch, campaignSummaries]);
+  const visibleCampaignGroups = useMemo(() => groupCampaignsByType(visibleCampaignSummaries), [visibleCampaignSummaries]);
   const riskWarnings = useMemo(() => compiledRiskWarnings(compiledConfig), [compiledConfig]);
   const previewJson = loaderData.rulesJson;
   const publishState = publishStateText({
@@ -1224,14 +1278,70 @@ export default function Index() {
       <s-section heading="Compiled campaign summary">
         {campaignSummaries.length > 0 ? (
           <s-stack gap="base">
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-              <s-stack gap="small">
-                <s-text type="emphasis">Campaign inventory</s-text>
-                <s-stack direction="inline" gap="base">
-                  <s-text>Hide rates: {campaignTypeTotals.HideRates}</s-text>
-                  <s-text>Shipping discounts: {campaignTypeTotals.ShippingDiscount}</s-text>
-                  <s-text>Cart validations: {campaignTypeTotals.CartValidation}</s-text>
+            <div
+              style={{
+                background: "linear-gradient(135deg, #f7fafc 0%, #fff7ed 100%)",
+                border: "1px solid #d5dbe3",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <s-stack gap="base">
+                <s-stack gap="small">
+                  <s-text type="emphasis">Campaign inventory</s-text>
+                  <s-text>
+                    Search, scan by outcome type, then expand a group to inspect the campaigns that will run.
+                  </s-text>
                 </s-stack>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 10,
+                    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                  }}
+                >
+                  {["HideRates", "ShippingDiscount", "CartValidation"].map((type) => {
+                    const visual = campaignVisual(type);
+                    return (
+                      <div
+                        key={type}
+                        style={{
+                          background: visual.background,
+                          border: `1px solid ${visual.border}`,
+                          borderRadius: 8,
+                          padding: 12,
+                        }}
+                      >
+                        <div style={{ alignItems: "center", display: "flex", gap: 10 }}>
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              alignItems: "center",
+                              background: visual.accent,
+                              borderRadius: 99,
+                              color: "#ffffff",
+                              display: "inline-flex",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              height: 24,
+                              justifyContent: "center",
+                              lineHeight: 1,
+                              width: 24,
+                            }}
+                          >
+                            {visual.icon}
+                          </span>
+                          <div>
+                            <div style={{ color: "#202223", fontSize: 13, fontWeight: 700 }}>{visual.label}</div>
+                            <div style={{ color: "#5c5f62", fontSize: 12 }}>
+                              {campaignTypeTotals[type]} campaign{campaignTypeTotals[type] === 1 ? "" : "s"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
                 <input
                   aria-label="Search compiled campaigns"
                   placeholder="Search by code, tag, country, rate, message, or campaign name"
@@ -1252,27 +1362,112 @@ export default function Index() {
                   {campaignSummaries.length === 1 ? "" : "s"}.
                 </s-text>
               </s-stack>
-            </s-box>
+            </div>
 
-            {visibleCampaignSummaries.map((campaign, index) => (
-              <s-box key={`${campaign.type}-${campaign.name}-${index}`} padding="base" borderWidth="base" borderRadius="base">
-                <s-stack gap="small">
-                  <s-stack direction="inline" gap="base">
-                    <s-text type="emphasis">{campaign.name}</s-text>
-                    <s-text>{campaignOutcomeLabel(campaign.type)}</s-text>
-                    <s-text>{campaignStatusLabel(campaign)}</s-text>
-                  </s-stack>
-                  <s-text>When: {campaign.when}</s-text>
-                  <s-text>Outcome: {campaign.outcome}</s-text>
-                  <s-text>Affects: {campaign.affects}</s-text>
-                  <s-text>Customer message: {campaign.customerMessage}</s-text>
-                  <s-text>
-                    Dependencies: {campaign.dependencies.length > 0 ? campaign.dependencies.join("; ") : "None"}
-                  </s-text>
-                  {campaign.risk.length > 0 ? <s-text>Check carefully: {campaign.risk.join("; ")}</s-text> : null}
-                </s-stack>
-              </s-box>
-            ))}
+            {visibleCampaignGroups.map((group) => {
+              const visual = campaignVisual(group.type);
+              return (
+                <details
+                  key={group.type}
+                  open={group.campaigns.length > 0}
+                  style={{
+                    background: visual.background,
+                    border: `1px solid ${visual.border}`,
+                    borderRadius: 8,
+                    overflow: "hidden",
+                  }}
+                >
+                  <summary
+                    style={{
+                      alignItems: "center",
+                      cursor: "pointer",
+                      display: "flex",
+                      gap: 12,
+                      listStyle: "none",
+                      padding: 14,
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        alignItems: "center",
+                        background: visual.accent,
+                        borderRadius: 99,
+                        color: "#ffffff",
+                        display: "inline-flex",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        height: 26,
+                        justifyContent: "center",
+                        width: 26,
+                      }}
+                    >
+                      {visual.icon}
+                    </span>
+                    <span style={{ flex: 1 }}>
+                      <span style={{ color: "#202223", display: "block", fontSize: 14, fontWeight: 700 }}>
+                        {visual.label}
+                      </span>
+                      <span style={{ color: "#5c5f62", display: "block", fontSize: 12 }}>{group.description}</span>
+                    </span>
+                    <span
+                      style={{
+                        background: "#ffffff",
+                        border: `1px solid ${visual.border}`,
+                        borderRadius: 99,
+                        color: visual.accent,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        padding: "3px 8px",
+                      }}
+                    >
+                      {group.campaigns.length}
+                    </span>
+                  </summary>
+                  {group.campaigns.length > 0 ? (
+                    <div style={{ borderTop: `1px solid ${visual.border}`, padding: 14 }}>
+                      <div style={{ display: "grid", gap: 12 }}>
+                        {group.campaigns.map((campaign, index) => (
+                          <div
+                            key={`${campaign.type}-${campaign.name}-${index}`}
+                            style={{
+                              background: "#ffffff",
+                              border: "1px solid #dde0e4",
+                              borderLeft: `4px solid ${visual.accent}`,
+                              borderRadius: 8,
+                              padding: 14,
+                            }}
+                          >
+                            <s-stack gap="small">
+                              <s-stack direction="inline" gap="base">
+                                <s-text type="emphasis">{campaign.name}</s-text>
+                                <s-text>{campaignOutcomeLabel(campaign.type)}</s-text>
+                                <s-text>{campaignStatusLabel(campaign)}</s-text>
+                              </s-stack>
+                              <s-text>When: {campaign.when}</s-text>
+                              <s-text>Outcome: {campaign.outcome}</s-text>
+                              <s-text>Affects: {campaign.affects}</s-text>
+                              <s-text>Customer message: {campaign.customerMessage}</s-text>
+                              <s-text>
+                                Dependencies:{" "}
+                                {campaign.dependencies.length > 0 ? campaign.dependencies.join("; ") : "None"}
+                              </s-text>
+                              {campaign.risk.length > 0 ? (
+                                <s-text>Check carefully: {campaign.risk.join("; ")}</s-text>
+                              ) : null}
+                            </s-stack>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ borderTop: `1px solid ${visual.border}`, color: "#5c5f62", padding: 14 }}>
+                      No compiled campaigns in this group.
+                    </div>
+                  )}
+                </details>
+              );
+            })}
 
             {visibleCampaignSummaries.length === 0 ? (
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
@@ -1287,24 +1482,41 @@ export default function Index() {
         )}
       </s-section>
 
-      <s-section heading="Saved compiled JSON">
-        <pre
+      <s-section heading="Technical output">
+        <details
           style={{
             background: "#f6f8fa",
             border: "1px solid #d0d7de",
             borderRadius: 6,
-            color: "#24292f",
-            fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-            fontSize: 12,
-            lineHeight: 1.5,
-            margin: 0,
-            overflowX: "auto",
-            padding: 16,
-            whiteSpace: "pre",
+            overflow: "hidden",
           }}
         >
-          {highlightJson(previewJson)}
-        </pre>
+          <summary
+            style={{
+              cursor: "pointer",
+              fontWeight: 700,
+              padding: 14,
+            }}
+          >
+            Saved compiled JSON
+          </summary>
+          <pre
+            style={{
+              background: "#ffffff",
+              borderTop: "1px solid #d0d7de",
+              color: "#24292f",
+              fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+              fontSize: 12,
+              lineHeight: 1.5,
+              margin: 0,
+              overflowX: "auto",
+              padding: 16,
+              whiteSpace: "pre",
+            }}
+          >
+            {highlightJson(previewJson)}
+          </pre>
+        </details>
       </s-section>
 
       <s-section slot="aside" heading="Campaigns">
