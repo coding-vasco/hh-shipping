@@ -14,7 +14,14 @@ const SHIPPING_CAMPAIGN_ATTRIBUTE = "_hh_shipping_campaign";
 const HIDE_ECO_ATTRIBUTE = "_hh_hide_eco";
 const DISCOUNT_CODES_ATTRIBUTE = "_hh_discount_codes";
 const CHECKOUT_UI_NAMESPACE = "$app:hh-checkout-ui";
+const CONTROL_ROOM_NAMESPACE = "$app:hh-control-room";
 const CONFIG_KEY = "function-configuration";
+const CONTROL_KEY = "control-config";
+const DEFAULT_CONTROL = {
+  enabled: true,
+  disableCartValidations: false,
+  disableDiscountCodeRules: false,
+};
 
 export default async () => {
   render(<Extension />, document.body);
@@ -34,6 +41,29 @@ function parseRulesConfig(appMetafields) {
   } catch (error) {
     console.warn("Could not parse HH checkout UI config.", error);
     return null;
+  }
+}
+
+function parseControlConfig(appMetafields) {
+  const entry = appMetafields.find(
+    ({metafield}) =>
+      metafield.namespace === CONTROL_ROOM_NAMESPACE &&
+      metafield.key === CONTROL_KEY,
+  );
+
+  if (!entry?.metafield?.value) return DEFAULT_CONTROL;
+
+  try {
+    const parsed = JSON.parse(entry.metafield.value);
+    return {
+      ...DEFAULT_CONTROL,
+      enabled: parsed.enabled !== false,
+      disableCartValidations: parsed.disableCartValidations === true,
+      disableDiscountCodeRules: parsed.disableDiscountCodeRules === true,
+    };
+  } catch (error) {
+    console.warn("Could not parse HH Control Room config.", error);
+    return DEFAULT_CONTROL;
   }
 }
 
@@ -109,6 +139,15 @@ function validationMatches(rule, {codes, subtotal, quantity}) {
   return true;
 }
 
+function usesDiscountCodeConditions(rule) {
+  const conditions = rule?.conditions ?? {};
+  return Boolean(
+    conditions.noDiscountCode ||
+      Array.isArray(conditions.discountCodeIncludes) ||
+      Array.isArray(conditions.discountCodeDoesNotInclude),
+  );
+}
+
 function Extension() {
   const discountCodes = useDiscountCodes();
   const lines = useCartLines();
@@ -117,6 +156,10 @@ function Extension() {
   const appMetafields = useAppMetafields({
     namespace: CHECKOUT_UI_NAMESPACE,
     key: CONFIG_KEY,
+  });
+  const controlMetafields = useAppMetafields({
+    namespace: CONTROL_ROOM_NAMESPACE,
+    key: CONTROL_KEY,
   });
 
   const [currentCampaign, currentHideEco, currentDiscountCodes] = useAttributeValues([
@@ -189,17 +232,23 @@ function Extension() {
 
   const bannerRule = useMemo(() => {
     const config = parseRulesConfig(appMetafields);
+    const controls = parseControlConfig(controlMetafields);
+    if (!controls.enabled || controls.disableCartValidations) return null;
+
     const subtotal = Number(subtotalAmount?.amount ?? 0);
     const quantity = lines.reduce((sum, line) => sum + Number(line.quantity ?? 0), 0);
-    const matchingRule = config?.validations?.find((rule) =>
-      validationMatches(rule, {
+    const matchingRule = config?.validations?.find((rule) => {
+      if (controls.disableDiscountCodeRules && usesDiscountCodeConditions(rule)) return false;
+      return validationMatches(rule, {
         codes: nextAttributes.codes,
         quantity,
         subtotal,
-      }),
-    );
+      });
+    });
 
     if (matchingRule) return matchingRule;
+
+    if (controls.disableDiscountCodeRules) return null;
 
     const showNoMoreRustFallback =
       subtotal === 0 &&
@@ -211,7 +260,7 @@ function Extension() {
       messageTitle: "Discount code requires a paid item",
       message: "NOMORERUST must be used with at least one paid jewelry item.",
     };
-  }, [appMetafields, lines, nextAttributes.codes, subtotalAmount?.amount]);
+  }, [appMetafields, controlMetafields, lines, nextAttributes.codes, subtotalAmount?.amount]);
 
   if (!bannerRule) return null;
 

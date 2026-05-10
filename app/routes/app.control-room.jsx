@@ -1,5 +1,6 @@
 import { Form, useActionData, useLoaderData, useNavigation, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import db from "../db.server";
 import { authenticate } from "../shopify.server";
 
 /* global process */
@@ -38,11 +39,6 @@ function normalizeControl(value) {
   };
 }
 
-function configFromMetafield(node) {
-  const config = node?.metafield?.jsonValue;
-  return config && typeof config === "object" ? config : null;
-}
-
 function countRules(config, key) {
   const rules = config?.[key];
   return Array.isArray(rules) ? rules.length : 0;
@@ -63,35 +59,32 @@ function countDiscountCodeRules(config, key) {
   return rules.filter(usesDiscountCodeConditions).length;
 }
 
-function runtimeStatus({ checkoutValidation, deliveryCustomization, shippingDiscount }) {
-  const deliveryConfig = configFromMetafield(deliveryCustomization);
-  const shippingConfig = configFromMetafield(shippingDiscount);
-  const validationConfig = configFromMetafield(checkoutValidation);
-
+function runtimeStatus({ checkoutValidation, deliveryCustomization, publishedConfig, shippingDiscount }) {
+  const config = publishedConfig?.version === 1 ? publishedConfig : {};
   return {
     hideRates: {
-      configured: Boolean(deliveryConfig),
+      configured: Boolean(deliveryCustomization?.metafield?.id),
       enabled: deliveryCustomization?.enabled === true,
-      count: countRules(deliveryConfig, "rules"),
-      discountCodeRules: countDiscountCodeRules(deliveryConfig, "rules"),
+      count: countRules(config, "rules"),
+      discountCodeRules: countDiscountCodeRules(config, "rules"),
     },
     shippingDiscounts: {
-      configured: Boolean(shippingConfig),
+      configured: Boolean(shippingDiscount),
       enabled: shippingDiscount?.status === "ACTIVE",
-      count: countRules(shippingConfig, "shippingDiscounts"),
-      discountCodeRules: countDiscountCodeRules(shippingConfig, "shippingDiscounts"),
+      count: countRules(config, "shippingDiscounts"),
+      discountCodeRules: countDiscountCodeRules(config, "shippingDiscounts"),
       status: shippingDiscount?.status ?? "MISSING",
     },
     cartValidations: {
-      configured: Boolean(validationConfig),
+      configured: Boolean(checkoutValidation?.metafield?.id),
       enabled: checkoutValidation?.enabled === true,
-      count: countRules(validationConfig, "validations"),
-      discountCodeRules: countDiscountCodeRules(validationConfig, "validations"),
+      count: countRules(config, "validations"),
+      discountCodeRules: countDiscountCodeRules(config, "validations"),
     },
   };
 }
 
-async function getShopWithControl(admin) {
+async function getShopWithControl(admin, publishedConfig) {
   const response = await admin.graphql(`#graphql
     query ControlRoomStatus {
       shop {
@@ -106,7 +99,7 @@ async function getShopWithControl(admin) {
           title
           enabled
           metafield(namespace: "$app:hh-delivery-customization", key: "function-configuration") {
-            jsonValue
+            id
           }
         }
       }
@@ -118,9 +111,6 @@ async function getShopWithControl(admin) {
               discountId
               title
               status
-              metafield(namespace: "$app:hh-shipping-discount", key: "function-configuration") {
-                jsonValue
-              }
             }
           }
         }
@@ -131,7 +121,7 @@ async function getShopWithControl(admin) {
           title
           enabled
           metafield(namespace: "$app:hh-checkout-validation", key: "function-configuration") {
-            jsonValue
+            id
           }
         }
       }
@@ -158,6 +148,7 @@ async function getShopWithControl(admin) {
     runtime: runtimeStatus({
       checkoutValidation,
       deliveryCustomization,
+      publishedConfig,
       shippingDiscount,
     }),
   };
@@ -211,7 +202,14 @@ function appEnvironment() {
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
-  const { control, runtime } = await getShopWithControl(admin);
+  const config = await db.shippingRulesConfig.findUnique({ where: { shop: session.shop } });
+  let publishedConfig = {};
+  try {
+    publishedConfig = config?.publishedJson ? JSON.parse(config.publishedJson) : {};
+  } catch {
+    publishedConfig = {};
+  }
+  const { control, runtime } = await getShopWithControl(admin, publishedConfig);
 
   return {
     appEnvironment: appEnvironment(),
@@ -224,7 +222,7 @@ export const loader = async ({ request }) => {
 export const action = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
   const formData = await request.formData();
-  const { id } = await getShopWithControl(admin);
+  const { id } = await getShopWithControl(admin, {});
   const control = {
     enabled: formData.get("enabled") === "on",
     disableHideRates: formData.get("disableHideRates") === "on",
