@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { cartValidationsGenerateRun } from "../src/cart_validations_generate_run.js";
 
-function input({ subtotal, discountCodes = ["NOMORERUST"], config, lines } = {}) {
+function input({ subtotal, discountCodes = ["NOMORERUST"], config, control = null, lines } = {}) {
   return {
+    shop: {
+      metafield: control ? { jsonValue: control } : null,
+    },
     validation: {
       metafield: {
         jsonValue: config ?? {
@@ -171,6 +174,18 @@ describe("checkout validation rules", () => {
         },
       ],
     });
+  });
+
+  test("control room can pause checkout validations", () => {
+    const result = cartValidationsGenerateRun(input({ subtotal: 0, control: { enabled: true, disableCartValidations: true } }));
+
+    expect(result.operations[0].validationAdd.errors).toEqual([]);
+  });
+
+  test("control room can pause discount-code validations only", () => {
+    const result = cartValidationsGenerateRun(input({ subtotal: 0, control: { enabled: true, disableDiscountCodeRules: true } }));
+
+    expect(result.operations[0].validationAdd.errors).toEqual([]);
   });
 
   test("uses product tags from dynamic function input variables", () => {

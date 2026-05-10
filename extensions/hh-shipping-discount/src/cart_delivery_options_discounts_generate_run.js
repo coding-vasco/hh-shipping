@@ -5,6 +5,14 @@
  * @typedef {import("../generated/api").CartDeliveryOptionsDiscountsGenerateRunResult} CartDeliveryOptionsDiscountsGenerateRunResult
  */
 
+const DEFAULT_CONTROL = {
+  enabled: true,
+  disableHideRates: false,
+  disableShippingDiscounts: false,
+  disableCartValidations: false,
+  disableDiscountCodeRules: false,
+};
+
 function lower(value) {
   return String(value ?? "").toLowerCase();
 }
@@ -225,6 +233,29 @@ function rulesConfig(input) {
   return { version: 1, shippingDiscounts: [] };
 }
 
+function controlConfig(input) {
+  const control = input.shop?.metafield?.jsonValue;
+  if (!control || typeof control !== "object") return DEFAULT_CONTROL;
+
+  return {
+    ...DEFAULT_CONTROL,
+    enabled: control.enabled !== false,
+    disableHideRates: control.disableHideRates === true,
+    disableShippingDiscounts: control.disableShippingDiscounts === true,
+    disableCartValidations: control.disableCartValidations === true,
+    disableDiscountCodeRules: control.disableDiscountCodeRules === true,
+  };
+}
+
+function usesDiscountCodeConditions(rule) {
+  const conditions = rule?.conditions ?? {};
+  return Boolean(
+    conditions.noDiscountCode ||
+      Array.isArray(conditions.discountCodeIncludes) ||
+      Array.isArray(conditions.discountCodeDoesNotInclude),
+  );
+}
+
 /**
  * @param {CartDeliveryOptionsDiscountsGenerateRunInput} input
  * @returns {CartDeliveryOptionsDiscountsGenerateRunResult}
@@ -235,6 +266,11 @@ export function cartDeliveryOptionsDiscountsGenerateRun(input) {
   }
 
   const config = rulesConfig(input);
+  const controls = controlConfig(input);
+  if (!controls.enabled || controls.disableShippingDiscounts) {
+    return { operations: [] };
+  }
+
   const signals = cartSignals(input);
   const candidates = [];
   const deliveryGroups = Array.isArray(input.cart?.deliveryGroups) ? input.cart.deliveryGroups : [];
@@ -242,6 +278,7 @@ export function cartDeliveryOptionsDiscountsGenerateRun(input) {
   for (const rule of config.shippingDiscounts) {
     if (!rule || typeof rule !== "object") continue;
     if (rule.enabled === false) continue;
+    if (controls.disableDiscountCodeRules && usesDiscountCodeConditions(rule)) continue;
 
     const targets = [];
     for (const deliveryGroup of deliveryGroups) {

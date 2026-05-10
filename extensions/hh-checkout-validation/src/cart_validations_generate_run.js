@@ -5,6 +5,14 @@
  * @typedef {import("../generated/api").CartValidationsGenerateRunResult} CartValidationsGenerateRunResult
  */
 
+const DEFAULT_CONTROL = {
+  enabled: true,
+  disableHideRates: false,
+  disableShippingDiscounts: false,
+  disableCartValidations: false,
+  disableDiscountCodeRules: false,
+};
+
 function lower(value) {
   return String(value ?? "").toLowerCase();
 }
@@ -148,18 +156,55 @@ function rulesConfig(input) {
   return { version: 1, validations: [] };
 }
 
+function controlConfig(input) {
+  const control = input.shop?.metafield?.jsonValue;
+  if (!control || typeof control !== "object") return DEFAULT_CONTROL;
+
+  return {
+    ...DEFAULT_CONTROL,
+    enabled: control.enabled !== false,
+    disableHideRates: control.disableHideRates === true,
+    disableShippingDiscounts: control.disableShippingDiscounts === true,
+    disableCartValidations: control.disableCartValidations === true,
+    disableDiscountCodeRules: control.disableDiscountCodeRules === true,
+  };
+}
+
+function usesDiscountCodeConditions(rule) {
+  const conditions = rule?.conditions ?? {};
+  return Boolean(
+    conditions.noDiscountCode ||
+      Array.isArray(conditions.discountCodeIncludes) ||
+      Array.isArray(conditions.discountCodeDoesNotInclude),
+  );
+}
+
 /**
  * @param {CartValidationsGenerateRunInput} input
  * @returns {CartValidationsGenerateRunResult}
  */
 export function cartValidationsGenerateRun(input) {
   const config = rulesConfig(input);
+  const controls = controlConfig(input);
   const signals = cartSignals(input);
   const errors = [];
+
+  if (!controls.enabled || controls.disableCartValidations) {
+    return {
+      operations: [
+        {
+          validationAdd: {
+            errors,
+          },
+        },
+      ],
+    };
+  }
 
   for (const rule of config.validations) {
     if (!rule || typeof rule !== "object") continue;
     if (rule.enabled === false) continue;
+    if (controls.disableDiscountCodeRules && usesDiscountCodeConditions(rule)) continue;
     if (!matchesConditions(rule, signals)) continue;
 
     if (typeof rule.message !== "string" || !rule.message.trim()) continue;

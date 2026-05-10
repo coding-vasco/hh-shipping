@@ -1,4 +1,9 @@
 query CartDeliveryOptionsTransformRunInput($productTags: [String!]! = []) {
+  shop {
+    metafield(namespace: "$app:hh-control-room", key: "control-config") {
+      jsonValue
+    }
+  }
   deliveryCustomization {
     metafield(namespace: "$app:hh-delivery-customization", key: "function-configuration") {
       jsonValue

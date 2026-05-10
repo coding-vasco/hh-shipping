@@ -1,4 +1,9 @@
 query CartDeliveryOptionsDiscountsGenerateRunInput($productTags: [String!]! = []) {
+  shop {
+    metafield(namespace: "$app:hh-control-room", key: "control-config") {
+      jsonValue
+    }
+  }
   cart {
     discountCodes: attribute(key: "_hh_discount_codes") {
       value

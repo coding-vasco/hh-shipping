@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { cartDeliveryOptionsTransformRun } from "../src/cart_delivery_options_transform_run.js";
 
-function input({ config = null, discountCodes = [], subtotal = 42, lines = [], deliveryOptions }) {
+function input({ config = null, control = null, discountCodes = [], subtotal = 42, lines = [], deliveryOptions }) {
   return {
+    shop: {
+      metafield: control ? { jsonValue: control } : null,
+    },
     deliveryCustomization: {
       metafield: config ? { jsonValue: config } : null,
     },
@@ -339,6 +342,68 @@ describe("delivery customization rules", () => {
         {
           deliveryOptionHide: {
             deliveryOptionHandle: "letterbox",
+          },
+        },
+      ],
+    });
+  });
+
+  test("control room can pause hide-rate rules", () => {
+    const result = cartDeliveryOptionsTransformRun(
+      input({
+        control: { enabled: true, disableHideRates: true },
+        config: {
+          version: 1,
+          rules: [
+            {
+              id: "hide-standard",
+              enabled: true,
+              conditions: {},
+              actions: [{ type: "hideDeliveryOptionsWhereTitleIncludes", values: ["standard"] }],
+            },
+          ],
+        },
+        deliveryOptions: [{ handle: "standard", title: "Standard Shipping" }],
+      }),
+    );
+
+    expect(result).toEqual({ operations: [] });
+  });
+
+  test("control room can pause discount-code hide-rate rules only", () => {
+    const result = cartDeliveryOptionsTransformRun(
+      input({
+        control: { enabled: true, disableDiscountCodeRules: true },
+        discountCodes: ["VIP50"],
+        config: {
+          version: 1,
+          rules: [
+            {
+              id: "code-hide-standard",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["VIP50"] },
+              actions: [{ type: "hideDeliveryOptionsWhereTitleIncludes", values: ["standard"] }],
+            },
+            {
+              id: "always-hide-express",
+              enabled: true,
+              conditions: {},
+              actions: [{ type: "hideDeliveryOptionsWhereTitleIncludes", values: ["express"] }],
+            },
+          ],
+        },
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "express", title: "Express Shipping" },
+        ],
+      }),
+    );
+
+    expect(result).toEqual({
+      operations: [
+        {
+          deliveryOptionHide: {
+            deliveryOptionHandle: "express",
           },
         },
       ],

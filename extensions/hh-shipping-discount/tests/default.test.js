@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { cartDeliveryOptionsDiscountsGenerateRun } from "../src/cart_delivery_options_discounts_generate_run.js";
 
-function input({ config, discountCodes = [], lines = [], deliveryOptions }) {
+function input({ config, control = null, discountCodes = [], lines = [], deliveryOptions }) {
   return {
+    shop: {
+      metafield: control ? { jsonValue: control } : null,
+    },
     discount: {
       discountClasses: ["SHIPPING"],
       metafield: config ? { jsonValue: config } : null,
@@ -323,6 +326,64 @@ describe("shipping discount rules", () => {
         },
       ],
     });
+  });
+
+  test("control room can pause shipping discounts", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        control: { enabled: true, disableShippingDiscounts: true },
+        config: {
+          version: 1,
+          shippingDiscounts: [
+            {
+              id: "free-standard",
+              enabled: true,
+              conditions: {},
+              rateSelector: { type: "deliveryOptionsWhereTitleIncludes", values: ["standard"] },
+              discount: { type: "percentage", value: 100, message: "Free Shipping" },
+            },
+          ],
+        },
+        deliveryOptions: [{ handle: "standard", title: "Standard Shipping" }],
+      }),
+    );
+
+    expect(result).toEqual({ operations: [] });
+  });
+
+  test("control room can pause discount-code shipping discounts only", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        control: { enabled: true, disableDiscountCodeRules: true },
+        discountCodes: ["FREESHIP"],
+        config: {
+          version: 1,
+          shippingDiscounts: [
+            {
+              id: "code-free-standard",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["FREESHIP"] },
+              rateSelector: { type: "deliveryOptionsWhereTitleIncludes", values: ["standard"] },
+              discount: { type: "percentage", value: 100, message: "Free Shipping" },
+            },
+            {
+              id: "always-free-express",
+              enabled: true,
+              conditions: {},
+              rateSelector: { type: "deliveryOptionsWhereTitleIncludes", values: ["express"] },
+              discount: { type: "percentage", value: 100, message: "Free Express" },
+            },
+          ],
+        },
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "express", title: "Express Shipping" },
+        ],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates).toHaveLength(1);
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0].message).toBe("Free Express");
   });
 
   test("uses product tags from dynamic function input variables", () => {

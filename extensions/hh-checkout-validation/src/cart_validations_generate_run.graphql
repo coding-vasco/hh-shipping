@@ -1,4 +1,9 @@
 query CartValidationsGenerateRunInput($productTags: [String!]! = []) {
+  shop {
+    metafield(namespace: "$app:hh-control-room", key: "control-config") {
+      jsonValue
+    }
+  }
   validation {
     metafield(namespace: "$app:hh-checkout-validation", key: "function-configuration") {
       jsonValue

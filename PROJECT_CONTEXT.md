@@ -43,6 +43,8 @@ Production preparation:
 - Discount Function: reads `_hh_discount_codes`, cart data, delivery option title/handle, product tag booleans, and its automatic app discount metafield config. It handles `ShippingDiscount` campaigns.
 - Cart and Checkout Validation Function: reads `_hh_discount_codes`, cart subtotal, product tag booleans, and its validation metafield config. It handles `CartValidation` campaigns such as NOMORERUST checkout blocking messages.
 - Embedded app: stores the editable working DSL in Prisma, stores up to 10 named DSL drafts in Shopify app-owned shop metafields, compiles DSL to JSON, and publishes config to Shopify.
+- Control Room: separate embedded app tab at `/app/control-room`. It stores checkout impact controls in shop metafield `$app:hh-control-room/control-config`. Missing/malformed control config defaults to all controls enabled for easy testing after app updates.
+- All three Functions read Control Room config. It can globally pause app impact, pause HideRates, pause ShippingDiscounts, pause CartValidations, or pause discount-code-dependent rules without changing the campaign DSL.
 
 ## DSL
 

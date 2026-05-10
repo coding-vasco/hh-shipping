@@ -6,6 +6,13 @@
  */
 
 const EMPTY_RULES = { version: 1, rules: [] };
+const DEFAULT_CONTROL = {
+  enabled: true,
+  disableHideRates: false,
+  disableShippingDiscounts: false,
+  disableCartValidations: false,
+  disableDiscountCodeRules: false,
+};
 
 function lower(value) {
   return String(value ?? "").toLowerCase();
@@ -245,6 +252,29 @@ function rulesConfig(input) {
   return EMPTY_RULES;
 }
 
+function controlConfig(input) {
+  const control = input.shop?.metafield?.jsonValue;
+  if (!control || typeof control !== "object") return DEFAULT_CONTROL;
+
+  return {
+    ...DEFAULT_CONTROL,
+    enabled: control.enabled !== false,
+    disableHideRates: control.disableHideRates === true,
+    disableShippingDiscounts: control.disableShippingDiscounts === true,
+    disableCartValidations: control.disableCartValidations === true,
+    disableDiscountCodeRules: control.disableDiscountCodeRules === true,
+  };
+}
+
+function usesDiscountCodeConditions(rule) {
+  const conditions = rule?.conditions ?? {};
+  return Boolean(
+    conditions.noDiscountCode ||
+      Array.isArray(conditions.discountCodeIncludes) ||
+      Array.isArray(conditions.discountCodeDoesNotInclude),
+  );
+}
+
 /**
  * @param {CartDeliveryOptionsTransformRunInput} input
  * @returns {CartDeliveryOptionsTransformRunResult}
@@ -253,6 +283,11 @@ export function cartDeliveryOptionsTransformRun(input) {
   const operations = [];
   const hiddenHandles = new Set();
   const config = rulesConfig(input);
+  const controls = controlConfig(input);
+  if (!controls.enabled || controls.disableHideRates) {
+    return { operations };
+  }
+
   const signals = cartSignals(input);
   const deliveryGroups = Array.isArray(input.cart?.deliveryGroups) ? input.cart.deliveryGroups : [];
 
@@ -262,6 +297,7 @@ export function cartDeliveryOptionsTransformRun(input) {
       const shouldHide = config.rules.some((rule) => {
         if (!rule || typeof rule !== "object") return false;
         if (rule.enabled === false) return false;
+        if (controls.disableDiscountCodeRules && usesDiscountCodeConditions(rule)) return false;
         if (!matchesConditions(rule, signals, deliveryGroup, deliveryOption)) return false;
         const actions = Array.isArray(rule.actions) ? rule.actions : [];
         return actions.some((action) => actionHidesDeliveryOption(action, deliveryOption));
