@@ -11,6 +11,8 @@ import {
 } from "../shipping-rules/compiler.server";
 import { authenticate } from "../shopify.server";
 
+/* global process */
+
 const CONFIG_NAMESPACE = "$app:hh-delivery-customization";
 const CONFIG_KEY = "function-configuration";
 const DELIVERY_CUSTOMIZATION_TITLE = "HH delivery customization POC";
@@ -21,6 +23,49 @@ const CHECKOUT_VALIDATION_TITLE = "HH checkout validation POC";
 const CHECKOUT_UI_NAMESPACE = "$app:hh-checkout-ui";
 const FUNCTION_INPUT_NAMESPACE = "$app:hh-function-input";
 const FUNCTION_INPUT_KEY = "input-variables";
+const DSL_EXAMPLES = [
+  {
+    title: "Code hides rates",
+    code: `HideRates({
+  name: "HHCSF hides eco",
+  condition: "all",
+  qualifiers: [
+    CodeQualifier({ match: "include", codes: ["HHCSF"] }),
+  ],
+  rateSelector: RateNameSelector({ match: "include", names: ["eco"] }),
+})`,
+  },
+  {
+    title: "Tag gives free shipping",
+    code: `ShippingDiscount({
+  name: "VIP tag free standard",
+  condition: "all",
+  qualifiers: [
+    CartHasItemQualifier({
+      comparison: "greater_than_or_equal",
+      amount: 1,
+      selector: ProductTagSelector({ match: "match", tags: ["vip_tag"] }),
+    }),
+  ],
+  rateSelector: RateNameSelector({ match: "include", names: ["standard"] }),
+  discount: PercentageDiscount({ percent: 100, message: "Free Shipping" }),
+})`,
+  },
+  {
+    title: "Code blocks checkout",
+    code: `CartValidation({
+  name: "NOMORERUST requires paid jewelry",
+  condition: "all",
+  qualifiers: [
+    CodeQualifier({ match: "include", codes: ["NOMORERUST"] }),
+    CartSubtotalQualifier({ comparison: "equal_to", amount: 0 }),
+  ],
+  message_title: "Discount code requires a paid item",
+  message: "NOMORERUST must be used with at least one paid jewelry item.",
+  target: "$.cart",
+})`,
+  },
+];
 
 function assertNoGraphqlErrors(json) {
   if (Array.isArray(json.errors) && json.errors.length > 0) {
@@ -636,6 +681,8 @@ function highlightDsl(source) {
   return parts;
 }
 
+// The app template does not use runtime PropTypes; React Router owns the data path.
+// eslint-disable-next-line react/prop-types
 function DslEditor({ value, onChange }) {
   const [scroll, setScroll] = useState({ left: 0, top: 0 });
   const textareaRef = useRef(null);
@@ -734,10 +781,10 @@ function describeComparison(comparison) {
 function conditionSummary(conditions = {}) {
   const parts = [];
 
-  if (conditions.noDiscountCode) parts.push("no discount code");
-  if (conditions.discountCodeIncludes) parts.push(`code includes ${joinValues(conditions.discountCodeIncludes)}`);
+  if (conditions.noDiscountCode) parts.push("cart has no discount code");
+  if (conditions.discountCodeIncludes) parts.push(`discount code includes ${joinValues(conditions.discountCodeIncludes)}`);
   if (conditions.discountCodeDoesNotInclude) {
-    parts.push(`code does not include ${joinValues(conditions.discountCodeDoesNotInclude)}`);
+    parts.push(`discount code does not include ${joinValues(conditions.discountCodeDoesNotInclude)}`);
   }
   if (conditions.countryCodeIs) parts.push(`shipping country is ${joinValues(conditions.countryCodeIs)}`);
   if (conditions.cartTotalQuantity) {
@@ -755,6 +802,31 @@ function conditionSummary(conditions = {}) {
   }
 
   return parts.length > 0 ? parts.join("; ") : "always";
+}
+
+function conditionDependencies(conditions = {}) {
+  const dependencies = [];
+
+  if (conditions.discountCodeIncludes || conditions.discountCodeDoesNotInclude || conditions.noDiscountCode) {
+    dependencies.push("Checkout UI discount-code sync");
+  }
+  if (conditions.lineProductTagQuantity?.tags?.length > 0) {
+    dependencies.push(`Product tags: ${joinValues(conditions.lineProductTagQuantity.tags)}`);
+  }
+  if (conditions.countryCodeIs) {
+    dependencies.push("Shipping address country");
+  }
+
+  return dependencies;
+}
+
+function conditionSearchTerms(conditions = {}) {
+  return [
+    ...(conditions.discountCodeIncludes ?? []),
+    ...(conditions.discountCodeDoesNotInclude ?? []),
+    ...(conditions.countryCodeIs ?? []),
+    ...(conditions.lineProductTagQuantity?.tags ?? []),
+  ];
 }
 
 function rateActionSummary(action) {
@@ -786,6 +858,24 @@ function discountSummary(discount) {
   return `${discount.type} discount`;
 }
 
+function campaignOutcomeLabel(type) {
+  switch (type) {
+    case "HideRates":
+      return "Hide rates";
+    case "ShippingDiscount":
+      return "Shipping discount";
+    case "CartValidation":
+      return "Cart validation";
+    default:
+      return type;
+  }
+}
+
+function campaignStatusLabel(campaign) {
+  if (campaign.risk.length > 0) return "Warning";
+  return "Ready";
+}
+
 function compiledCampaignSummaries(config) {
   const rows = [];
   const seen = new Set();
@@ -796,9 +886,16 @@ function compiledCampaignSummaries(config) {
     seen.add(key);
     rows.push({
       type: "HideRates",
+      outcome: "Hide matching delivery options",
       name: rule.description || rule.id,
       when: conditionSummary(rule.conditions),
-      does: (rule.actions ?? []).map(rateActionSummary).join("; "),
+      affects: (rule.actions ?? []).map(rateActionSummary).join("; "),
+      customerMessage: "None",
+      dependencies: conditionDependencies(rule.conditions),
+      risk: (rule.actions ?? []).some((action) => action.type === "hideAllDeliveryOptions")
+        ? ["Can hide every shipping rate"]
+        : [],
+      searchTerms: conditionSearchTerms(rule.conditions),
     });
   }
 
@@ -808,9 +905,22 @@ function compiledCampaignSummaries(config) {
     seen.add(key);
     rows.push({
       type: "ShippingDiscount",
+      outcome: `${discountSummary(rule.discount)} shipping`,
       name: rule.description || rule.id,
       when: conditionSummary(rule.conditions),
-      does: `${discountSummary(rule.discount)} on ${rateSelectorSummary(rule.rateSelector)}${rule.discount?.message ? `, message "${rule.discount.message}"` : ""}`,
+      affects: rateSelectorSummary(rule.rateSelector),
+      customerMessage: rule.discount?.message || "None",
+      dependencies: [
+        ...conditionDependencies(rule.conditions),
+        "Automatic app shipping discount",
+        "Shopify discount combination settings",
+      ],
+      risk: [],
+      searchTerms: [
+        ...conditionSearchTerms(rule.conditions),
+        ...(rule.rateSelector?.values ?? []),
+        rule.discount?.message ?? "",
+      ],
     });
   }
 
@@ -820,13 +930,44 @@ function compiledCampaignSummaries(config) {
     seen.add(key);
     rows.push({
       type: "CartValidation",
+      outcome: "Block checkout",
       name: rule.description || rule.id,
       when: conditionSummary(rule.conditions),
-      does: `blocks checkout at ${rule.target ?? "$.cart"} with "${rule.message}"`,
+      affects: rule.target ?? "$.cart",
+      customerMessage: rule.messageTitle ? `${rule.messageTitle}: ${rule.message}` : rule.message,
+      dependencies: conditionDependencies(rule.conditions),
+      risk: ["Can block checkout"],
+      searchTerms: conditionSearchTerms(rule.conditions),
     });
   }
 
   return rows;
+}
+
+function campaignSearchText(campaign) {
+  return [
+    campaign.type,
+    campaign.name,
+    campaign.outcome,
+    campaign.when,
+    campaign.affects,
+    campaign.customerMessage,
+    ...(campaign.dependencies ?? []),
+    ...(campaign.risk ?? []),
+    ...(campaign.searchTerms ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function campaignTypeCounts(campaigns) {
+  return campaigns.reduce(
+    (counts, campaign) => {
+      counts[campaign.type] = (counts[campaign.type] ?? 0) + 1;
+      return counts;
+    },
+    { HideRates: 0, ShippingDiscount: 0, CartValidation: 0 },
+  );
 }
 
 function compiledRiskWarnings(config) {
@@ -896,6 +1037,7 @@ export default function Index() {
   const navigation = useNavigation();
   const shopify = useAppBridge();
   const [rulesScript, setRulesScript] = useState(loaderData.rulesScript);
+  const [campaignSearch, setCampaignSearch] = useState("");
 
   const isSubmitting = navigation.state === "submitting";
   const hasLocalChanges = rulesScript !== loaderData.rulesScript;
@@ -914,6 +1056,12 @@ export default function Index() {
     };
   }, [compiledConfig]);
   const campaignSummaries = useMemo(() => compiledCampaignSummaries(compiledConfig), [compiledConfig]);
+  const campaignTypeTotals = useMemo(() => campaignTypeCounts(campaignSummaries), [campaignSummaries]);
+  const visibleCampaignSummaries = useMemo(() => {
+    const needle = campaignSearch.trim().toLowerCase();
+    if (!needle) return campaignSummaries;
+    return campaignSummaries.filter((campaign) => campaignSearchText(campaign).includes(needle));
+  }, [campaignSearch, campaignSummaries]);
   const riskWarnings = useMemo(() => compiledRiskWarnings(compiledConfig), [compiledConfig]);
   const previewJson = loaderData.rulesJson;
   const publishState = publishStateText({
@@ -939,7 +1087,7 @@ export default function Index() {
           heading={`${loaderData.appEnvironment.toUpperCase()} environment`}
         >
           <s-paragraph>
-            Editing <s-text type="emphasis">{loaderData.shop}</s-text>. Published rules affect this shop's checkout.
+            Editing <s-text type="emphasis">{loaderData.shop}</s-text>. Published rules affect this shop checkout.
           </s-paragraph>
         </s-banner>
       </s-section>
@@ -948,8 +1096,8 @@ export default function Index() {
         <s-stack gap="base">
           <s-paragraph>
             Editing rules for <s-text type="emphasis">{loaderData.shop}</s-text>. This script is intentionally small:
-            campaigns create hide-rate rules, qualifiers decide when they apply, and rate selectors decide which delivery
-            options are hidden.
+            campaigns define checkout outcomes, qualifiers decide when they apply, and selectors decide which rates or
+            cart states are affected.
           </s-paragraph>
 
           <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
@@ -1076,17 +1224,61 @@ export default function Index() {
       <s-section heading="Compiled campaign summary">
         {campaignSummaries.length > 0 ? (
           <s-stack gap="base">
-            {campaignSummaries.map((campaign, index) => (
+            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+              <s-stack gap="small">
+                <s-text type="emphasis">Campaign inventory</s-text>
+                <s-stack direction="inline" gap="base">
+                  <s-text>Hide rates: {campaignTypeTotals.HideRates}</s-text>
+                  <s-text>Shipping discounts: {campaignTypeTotals.ShippingDiscount}</s-text>
+                  <s-text>Cart validations: {campaignTypeTotals.CartValidation}</s-text>
+                </s-stack>
+                <input
+                  aria-label="Search compiled campaigns"
+                  placeholder="Search by code, tag, country, rate, message, or campaign name"
+                  value={campaignSearch}
+                  onChange={(event) => setCampaignSearch(event.target.value)}
+                  style={{
+                    border: "1px solid #c9cccf",
+                    borderRadius: 6,
+                    boxSizing: "border-box",
+                    fontSize: 14,
+                    minHeight: 38,
+                    padding: "0 12px",
+                    width: "100%",
+                  }}
+                />
+                <s-text>
+                  Showing {visibleCampaignSummaries.length} of {campaignSummaries.length} compiled campaign
+                  {campaignSummaries.length === 1 ? "" : "s"}.
+                </s-text>
+              </s-stack>
+            </s-box>
+
+            {visibleCampaignSummaries.map((campaign, index) => (
               <s-box key={`${campaign.type}-${campaign.name}-${index}`} padding="base" borderWidth="base" borderRadius="base">
                 <s-stack gap="small">
-                  <s-text type="emphasis">
-                    {campaign.type}: {campaign.name}
-                  </s-text>
+                  <s-stack direction="inline" gap="base">
+                    <s-text type="emphasis">{campaign.name}</s-text>
+                    <s-text>{campaignOutcomeLabel(campaign.type)}</s-text>
+                    <s-text>{campaignStatusLabel(campaign)}</s-text>
+                  </s-stack>
                   <s-text>When: {campaign.when}</s-text>
-                  <s-text>Does: {campaign.does}</s-text>
+                  <s-text>Outcome: {campaign.outcome}</s-text>
+                  <s-text>Affects: {campaign.affects}</s-text>
+                  <s-text>Customer message: {campaign.customerMessage}</s-text>
+                  <s-text>
+                    Dependencies: {campaign.dependencies.length > 0 ? campaign.dependencies.join("; ") : "None"}
+                  </s-text>
+                  {campaign.risk.length > 0 ? <s-text>Check carefully: {campaign.risk.join("; ")}</s-text> : null}
                 </s-stack>
               </s-box>
             ))}
+
+            {visibleCampaignSummaries.length === 0 ? (
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                <s-text>No compiled campaigns match this search.</s-text>
+              </s-box>
+            ) : null}
           </s-stack>
         ) : (
           <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
@@ -1127,10 +1319,10 @@ export default function Index() {
             <s-text>CartValidation: show a blocking checkout message when qualifiers match.</s-text>
           </s-list-item>
           <s-list-item>
-            <s-text>condition: "all" means every qualifier must match.</s-text>
+            <s-text>condition all means every qualifier must match.</s-text>
           </s-list-item>
           <s-list-item>
-            <s-text>condition: "any" creates one rule per qualifier.</s-text>
+            <s-text>condition any creates one rule per qualifier.</s-text>
           </s-list-item>
         </s-unordered-list>
       </s-section>
@@ -1171,6 +1363,35 @@ export default function Index() {
           Matching is case-insensitive. Product tags must be listed in settings.productTags before a campaign can use
           them.
         </s-paragraph>
+      </s-section>
+
+      <s-section slot="aside" heading="DSL examples">
+        <s-stack gap="base">
+          {DSL_EXAMPLES.map((example) => (
+            <s-box key={example.title} padding="base" borderWidth="base" borderRadius="base">
+              <s-stack gap="small">
+                <s-text type="emphasis">{example.title}</s-text>
+                <pre
+                  style={{
+                    background: "#f6f8fa",
+                    border: "1px solid #d0d7de",
+                    borderRadius: 6,
+                    color: "#24292f",
+                    fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+                    fontSize: 11,
+                    lineHeight: 1.45,
+                    margin: 0,
+                    overflowX: "auto",
+                    padding: 10,
+                    whiteSpace: "pre",
+                  }}
+                >
+                  {highlightDsl(example.code)}
+                </pre>
+              </s-stack>
+            </s-box>
+          ))}
+        </s-stack>
       </s-section>
     </s-page>
   );

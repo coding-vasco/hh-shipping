@@ -12,7 +12,7 @@ Every campaign has three parts:
 2. Qualifiers: when the campaign applies.
 3. Rate selector: which delivery options are affected.
 
-Phase 1 supports two campaign types:
+Phase 1 supports three campaign outcomes:
 
 ```js
 HideRates({ ... })
