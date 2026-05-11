@@ -22,7 +22,13 @@ function config(store) {
   return storeConfig;
 }
 
-function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf22Exc = false } = {}) {
+function productLine({
+  quantity = 1,
+  boxShipping = false,
+  subsBoxMvp = false,
+  bf22Exc = false,
+  dynamicTags = [],
+} = {}) {
   return {
     quantity,
     merchandise: {
@@ -30,13 +36,19 @@ function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf
         boxShipping,
         subsBoxMvp,
         bf22Exc,
+        dynamicTags,
       },
     },
   };
 }
 
-function deliveryInput({ store, discountCodes = [], subtotal = 42, lines = [], countryCode = "PT", deliveryOptions }) {
+function controlMetafield(control = null) {
+  return control ? { metafield: { jsonValue: control } } : {};
+}
+
+function deliveryInput({ store, control = null, discountCodes = [], subtotal = 42, lines = [], countryCode = "PT", deliveryOptions }) {
   return {
+    shop: controlMetafield(control),
     deliveryCustomization: {
       metafield: {
         jsonValue: config(store),
@@ -66,6 +78,7 @@ function deliveryInput({ store, discountCodes = [], subtotal = 42, lines = [], c
 
 function discountInput({
   store,
+  control = null,
   discountCodes = [],
   subtotal = 42,
   lines = [],
@@ -74,6 +87,7 @@ function discountInput({
   discountClasses = ["SHIPPING"],
 }) {
   return {
+    shop: controlMetafield(control),
     discount: {
       discountClasses,
       metafield: {
@@ -101,8 +115,9 @@ function discountInput({
   };
 }
 
-function validationInput({ store, discountCodes = [], subtotal = 42, lines = [productLine()] }) {
+function validationInput({ store, control = null, discountCodes = [], subtotal = 42, lines = [productLine()] }) {
   return {
+    shop: controlMetafield(control),
     validation: {
       metafield: {
         jsonValue: config(store),
@@ -142,6 +157,28 @@ describe("production runtime golden snapshots", () => {
         {
           deliveryOptionHide: {
             deliveryOptionHandle: "eco",
+          },
+        },
+      ],
+    });
+  });
+
+  test("EU normal carts hide subscription rates without hiding standard options", () => {
+    const result = cartDeliveryOptionsTransformRun(
+      deliveryInput({
+        store: "hey-harper-shop-nl.myshopify.com",
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping EU" },
+          { handle: "subscription", title: "Ships with your next subscription renewal" },
+        ],
+      }),
+    );
+
+    assert.deepEqual(result, {
+      operations: [
+        {
+          deliveryOptionHide: {
+            deliveryOptionHandle: "subscription",
           },
         },
       ],
@@ -246,6 +283,57 @@ describe("production runtime golden snapshots", () => {
     });
   });
 
+  test("EU box_shipping product hides eco and discounts standard over subtotal threshold", () => {
+    assert.deepEqual(
+      cartDeliveryOptionsTransformRun(
+        deliveryInput({
+          store: "hey-harper-shop-nl.myshopify.com",
+          subtotal: 20,
+          lines: [productLine({ boxShipping: true })],
+          deliveryOptions: [
+            { handle: "eco", title: "Standard eco Delivery" },
+            { handle: "standard", title: "Standard Shipping EU" },
+          ],
+        }),
+      ),
+      {
+        operations: [
+          {
+            deliveryOptionHide: {
+              deliveryOptionHandle: "eco",
+            },
+          },
+        ],
+      },
+    );
+
+    const discountResult = cartDeliveryOptionsDiscountsGenerateRun(
+      discountInput({
+        store: "hey-harper-shop-nl.myshopify.com",
+        subtotal: 20,
+        lines: [productLine({ boxShipping: true })],
+        deliveryOptions: [
+          { handle: "eco", title: "Standard eco Delivery" },
+          { handle: "standard", title: "Standard Shipping EU" },
+        ],
+      }),
+    );
+
+    assert.equal(discountResult.operations[0].deliveryDiscountsAdd.candidates[0].message, "Free Shipping");
+    assert.deepEqual(discountResult.operations[0].deliveryDiscountsAdd.candidates[0].targets, [
+      {
+        deliveryOption: {
+          handle: "eco",
+        },
+      },
+      {
+        deliveryOption: {
+          handle: "standard",
+        },
+      },
+    ]);
+  });
+
   test("UK BFDEAL4 with 4 items discounts express shipping", () => {
     const result = cartDeliveryOptionsDiscountsGenerateRun(
       discountInput({
@@ -343,6 +431,31 @@ describe("production runtime golden snapshots", () => {
     });
   });
 
+  test("UK small non-box carts hide standard UK and keep letterbox", () => {
+    const result = cartDeliveryOptionsTransformRun(
+      deliveryInput({
+        store: "hey-harper-shop-uk.myshopify.com",
+        lines: [productLine({ quantity: 2 })],
+        countryCode: "GB",
+        deliveryOptions: [
+          { handle: "letterbox", title: "Letterbox Delivery" },
+          { handle: "standard-uk", title: "Standard UK" },
+          { handle: "express", title: "Express UK" },
+        ],
+      }),
+    );
+
+    assert.deepEqual(result, {
+      operations: [
+        {
+          deliveryOptionHide: {
+            deliveryOptionHandle: "standard-uk",
+          },
+        },
+      ],
+    });
+  });
+
   test("US 5 qualifying items discount priority shipping", () => {
     const result = cartDeliveryOptionsDiscountsGenerateRun(
       discountInput({
@@ -384,6 +497,22 @@ describe("production runtime golden snapshots", () => {
     });
   });
 
+  test("US BF22 excluded items do not count toward priority discount", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      discountInput({
+        store: "hey-harper-shop-us.myshopify.com",
+        lines: [productLine({ quantity: 5, bf22Exc: true })],
+        countryCode: "US",
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping US" },
+          { handle: "priority", title: "Priority Handling US" },
+        ],
+      }),
+    );
+
+    assert.deepEqual(result, { operations: [] });
+  });
+
   test("NOMORERUST validation blocks zero-subtotal carts in every production store", () => {
     for (const store of configs.keys()) {
       const result = cartValidationsGenerateRun(
@@ -409,6 +538,124 @@ describe("production runtime golden snapshots", () => {
         ],
       });
     }
+  });
+
+  test("Control Room global switch pauses all checkout runtime behavior", () => {
+    const control = { enabled: false };
+
+    assert.deepEqual(
+      cartDeliveryOptionsTransformRun(
+        deliveryInput({
+          store: "hey-harper-shop-nl.myshopify.com",
+          control,
+          discountCodes: ["NOMORERUST"],
+          subtotal: 0,
+          deliveryOptions: [{ handle: "standard", title: "Standard Shipping EU" }],
+        }),
+      ),
+      { operations: [] },
+    );
+
+    assert.deepEqual(
+      cartDeliveryOptionsDiscountsGenerateRun(
+        discountInput({
+          store: "hey-harper-shop-nl.myshopify.com",
+          control,
+          lines: [productLine({ subsBoxMvp: true })],
+          deliveryOptions: [{ handle: "standard", title: "Standard Shipping EU" }],
+        }),
+      ),
+      { operations: [] },
+    );
+
+    assert.deepEqual(
+      cartValidationsGenerateRun(
+        validationInput({
+          store: "hey-harper-shop-nl.myshopify.com",
+          control,
+          discountCodes: ["NOMORERUST"],
+          subtotal: 0,
+        }),
+      ),
+      { operations: [{ validationAdd: { errors: [] } }] },
+    );
+  });
+
+  test("Control Room function switches pause only their target runtime area", () => {
+    assert.deepEqual(
+      cartDeliveryOptionsTransformRun(
+        deliveryInput({
+          store: "hey-harper-shop-nl.myshopify.com",
+          control: { enabled: true, disableHideRates: true },
+          discountCodes: ["NOMORERUST"],
+          subtotal: 0,
+          deliveryOptions: [{ handle: "standard", title: "Standard Shipping EU" }],
+        }),
+      ),
+      { operations: [] },
+    );
+
+    assert.deepEqual(
+      cartDeliveryOptionsDiscountsGenerateRun(
+        discountInput({
+          store: "hey-harper-shop-nl.myshopify.com",
+          control: { enabled: true, disableShippingDiscounts: true },
+          lines: [productLine({ subsBoxMvp: true })],
+          deliveryOptions: [{ handle: "standard", title: "Standard Shipping EU" }],
+        }),
+      ),
+      { operations: [] },
+    );
+
+    assert.deepEqual(
+      cartValidationsGenerateRun(
+        validationInput({
+          store: "hey-harper-shop-nl.myshopify.com",
+          control: { enabled: true, disableCartValidations: true },
+          discountCodes: ["NOMORERUST"],
+          subtotal: 0,
+        }),
+      ),
+      { operations: [{ validationAdd: { errors: [] } }] },
+    );
+  });
+
+  test("Control Room discount-code switch pauses code-dependent rules but leaves product-tag rules active", () => {
+    assert.deepEqual(
+      cartDeliveryOptionsTransformRun(
+        deliveryInput({
+          store: "hey-harper-shop-nl.myshopify.com",
+          control: { enabled: true, disableDiscountCodeRules: true },
+          discountCodes: ["HHCSF272933_2"],
+          lines: [productLine({ boxShipping: true })],
+          deliveryOptions: [
+            { handle: "eco", title: "Standard eco Delivery" },
+            { handle: "standard", title: "Standard Shipping EU" },
+          ],
+        }),
+      ),
+      {
+        operations: [
+          {
+            deliveryOptionHide: {
+              deliveryOptionHandle: "eco",
+            },
+          },
+        ],
+      },
+    );
+
+    assert.deepEqual(
+      cartValidationsGenerateRun(
+        validationInput({
+          store: "hey-harper-shop-nl.myshopify.com",
+          control: { enabled: true, disableDiscountCodeRules: true },
+          discountCodes: ["NOMORERUST"],
+          subtotal: 0,
+        }),
+      ),
+      { operations: [{ validationAdd: { errors: [] } }] },
+    );
   });
 
   test("missing runtime config fails open for all functions", () => {
