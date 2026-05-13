@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { cartDeliveryOptionsTransformRun } from "../src/cart_delivery_options_transform_run.js";
 
-function input({ config = null, discountCodes = [], subtotal = 42, lines = [], deliveryOptions }) {
+function input({ config = null, control = null, discountCodes = [], subtotal = 42, lines = [], deliveryOptions }) {
   return {
+    shop: {
+      metafield: control ? { jsonValue: control } : null,
+    },
     deliveryCustomization: {
       metafield: config ? { jsonValue: config } : null,
     },
@@ -28,7 +31,7 @@ function input({ config = null, discountCodes = [], subtotal = 42, lines = [], d
   };
 }
 
-function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf22Exc = false } = {}) {
+function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf22Exc = false, dynamicTags = [] } = {}) {
   return {
     quantity,
     merchandise: {
@@ -36,6 +39,7 @@ function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf
         boxShipping,
         subsBoxMvp,
         bf22Exc,
+        dynamicTags,
       },
     },
   };
@@ -55,6 +59,65 @@ describe("delivery customization rules", () => {
     expect(result).toEqual({
       operations: [],
     });
+  });
+
+  test("malformed config fails open", () => {
+    const result = cartDeliveryOptionsTransformRun(
+      input({
+        config: {
+          version: 1,
+          rules: [
+            null,
+            {
+              id: "bad-actions",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["VIP50"] },
+              actions: null,
+            },
+            {
+              id: "unknown-action",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["VIP50"] },
+              actions: [{ type: "unsupportedHideEverything" }],
+            },
+          ],
+        },
+        discountCodes: ["VIP50"],
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "subscription", title: "Subscription Delivery" },
+        ],
+      }),
+    );
+
+    expect(result).toEqual({ operations: [] });
+  });
+
+  test("missing delivery groups fail open", () => {
+    const result = cartDeliveryOptionsTransformRun({
+      deliveryCustomization: {
+        metafield: {
+          jsonValue: {
+            version: 1,
+            rules: [
+              {
+                id: "hide-all",
+                enabled: true,
+                conditions: {},
+                actions: [{ type: "hideAllDeliveryOptions" }],
+              },
+            ],
+          },
+        },
+      },
+      cart: {
+        discountCodes: { value: "VIP50" },
+        cost: { subtotalAmount: { amount: "42" } },
+        lines: [],
+      },
+    });
+
+    expect(result).toEqual({ operations: [] });
   });
 
   test("published subscription campaigns hide non-subscription delivery options", () => {
@@ -283,5 +346,118 @@ describe("delivery customization rules", () => {
         },
       ],
     });
+  });
+
+  test("control room can pause hide-rate rules", () => {
+    const result = cartDeliveryOptionsTransformRun(
+      input({
+        control: { enabled: true, disableHideRates: true },
+        config: {
+          version: 1,
+          rules: [
+            {
+              id: "hide-standard",
+              enabled: true,
+              conditions: {},
+              actions: [{ type: "hideDeliveryOptionsWhereTitleIncludes", values: ["standard"] }],
+            },
+          ],
+        },
+        deliveryOptions: [{ handle: "standard", title: "Standard Shipping" }],
+      }),
+    );
+
+    expect(result).toEqual({ operations: [] });
+  });
+
+  test("control room can pause discount-code hide-rate rules only", () => {
+    const result = cartDeliveryOptionsTransformRun(
+      input({
+        control: { enabled: true, disableDiscountCodeRules: true },
+        discountCodes: ["VIP50"],
+        config: {
+          version: 1,
+          rules: [
+            {
+              id: "code-hide-standard",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["VIP50"] },
+              actions: [{ type: "hideDeliveryOptionsWhereTitleIncludes", values: ["standard"] }],
+            },
+            {
+              id: "always-hide-express",
+              enabled: true,
+              conditions: {},
+              actions: [{ type: "hideDeliveryOptionsWhereTitleIncludes", values: ["express"] }],
+            },
+          ],
+        },
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "express", title: "Express Shipping" },
+        ],
+      }),
+    );
+
+    expect(result).toEqual({
+      operations: [
+        {
+          deliveryOptionHide: {
+            deliveryOptionHandle: "express",
+          },
+        },
+      ],
+    });
+  });
+
+  test("uses product tags from dynamic function input variables", () => {
+    const result = cartDeliveryOptionsTransformRun(
+      input({
+        lines: [
+          productLine({
+            dynamicTags: [
+              { tag: "ops_campaign_tag", hasTag: true },
+              { tag: "ignored_tag", hasTag: false },
+            ],
+          }),
+        ],
+        config: {
+          version: 1,
+          productTags: ["ops_campaign_tag", "ignored_tag"],
+          rules: [
+            {
+              id: "dynamic-tag-hides-eco",
+              enabled: true,
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 1,
+                  match: "match",
+                  tags: ["ops_campaign_tag"],
+                },
+              },
+              actions: [
+                {
+                  type: "hideDeliveryOptionsWhereTitleIncludes",
+                  values: ["eco"],
+                },
+              ],
+            },
+          ],
+        },
+        deliveryOptions: [
+          { handle: "eco", title: "Eco Delivery" },
+          { handle: "standard", title: "Standard Delivery" },
+        ],
+      }),
+    );
+
+    expect(result.operations).toEqual([
+      {
+        deliveryOptionHide: {
+          deliveryOptionHandle: "eco",
+        },
+      },
+    ]);
   });
 });

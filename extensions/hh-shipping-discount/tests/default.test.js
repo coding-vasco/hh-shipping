@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { cartDeliveryOptionsDiscountsGenerateRun } from "../src/cart_delivery_options_discounts_generate_run.js";
 
-function input({ config, discountCodes = [], lines = [], deliveryOptions }) {
+function input({ config, control = null, discountCodes = [], lines = [], deliveryOptions }) {
   return {
+    shop: {
+      metafield: control ? { jsonValue: control } : null,
+    },
     discount: {
       discountClasses: ["SHIPPING"],
       metafield: config ? { jsonValue: config } : null,
@@ -28,7 +31,7 @@ function input({ config, discountCodes = [], lines = [], deliveryOptions }) {
   };
 }
 
-function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf22Exc = false } = {}) {
+function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf22Exc = false, dynamicTags = [] } = {}) {
   return {
     quantity,
     merchandise: {
@@ -36,6 +39,7 @@ function productLine({ quantity = 1, boxShipping = false, subsBoxMvp = false, bf
         boxShipping,
         subsBoxMvp,
         bf22Exc,
+        dynamicTags,
       },
     },
   };
@@ -111,6 +115,69 @@ describe("shipping discount rules", () => {
       discount: {
         discountClasses: ["PRODUCT"],
         metafield: null,
+      },
+    });
+
+    expect(result).toEqual({ operations: [] });
+  });
+
+  test("malformed config fails open", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          shippingDiscounts: [
+            null,
+            {
+              id: "bad-selector",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["FREESHIP"] },
+              rateSelector: { type: "unsupportedSelector" },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "Free Shipping",
+              },
+            },
+          ],
+        },
+        discountCodes: ["FREESHIP"],
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+        ],
+      }),
+    );
+
+    expect(result).toEqual({ operations: [] });
+  });
+
+  test("missing delivery groups fail open", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun({
+      discount: {
+        discountClasses: ["SHIPPING"],
+        metafield: {
+          jsonValue: {
+            version: 1,
+            shippingDiscounts: [
+              {
+                id: "free-everything",
+                enabled: true,
+                conditions: {},
+                rateSelector: { type: "allDeliveryOptions" },
+                discount: {
+                  type: "percentage",
+                  value: 100,
+                  message: "Free Shipping",
+                },
+              },
+            ],
+          },
+        },
+      },
+      cart: {
+        discountCodes: { value: "FREESHIP" },
+        cost: { subtotalAmount: { amount: "42" } },
+        lines: [],
       },
     });
 
@@ -259,5 +326,213 @@ describe("shipping discount rules", () => {
         },
       ],
     });
+  });
+
+  test("control room can pause shipping discounts", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        control: { enabled: true, disableShippingDiscounts: true },
+        config: {
+          version: 1,
+          shippingDiscounts: [
+            {
+              id: "free-standard",
+              enabled: true,
+              conditions: {},
+              rateSelector: { type: "deliveryOptionsWhereTitleIncludes", values: ["standard"] },
+              discount: { type: "percentage", value: 100, message: "Free Shipping" },
+            },
+          ],
+        },
+        deliveryOptions: [{ handle: "standard", title: "Standard Shipping" }],
+      }),
+    );
+
+    expect(result).toEqual({ operations: [] });
+  });
+
+  test("control room can pause discount-code shipping discounts only", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        control: { enabled: true, disableDiscountCodeRules: true },
+        discountCodes: ["FREESHIP"],
+        config: {
+          version: 1,
+          shippingDiscounts: [
+            {
+              id: "code-free-standard",
+              enabled: true,
+              conditions: { discountCodeIncludes: ["FREESHIP"] },
+              rateSelector: { type: "deliveryOptionsWhereTitleIncludes", values: ["standard"] },
+              discount: { type: "percentage", value: 100, message: "Free Shipping" },
+            },
+            {
+              id: "always-free-express",
+              enabled: true,
+              conditions: {},
+              rateSelector: { type: "deliveryOptionsWhereTitleIncludes", values: ["express"] },
+              discount: { type: "percentage", value: 100, message: "Free Express" },
+            },
+          ],
+        },
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "express", title: "Express Shipping" },
+        ],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates).toHaveLength(1);
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0].message).toBe("Free Express");
+  });
+
+  test("uses product tags from dynamic function input variables", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          productTags: ["ops_campaign_tag"],
+          shippingDiscounts: [
+            {
+              id: "dynamic-tag-free-standard",
+              enabled: true,
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 1,
+                  match: "match",
+                  tags: ["ops_campaign_tag"],
+                },
+              },
+              rateSelector: {
+                type: "deliveryOptionsWhereTitleIncludes",
+                values: ["standard"],
+              },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "Free Shipping",
+              },
+            },
+          ],
+        },
+        lines: [productLine({ dynamicTags: [{ tag: "ops_campaign_tag", hasTag: true }] })],
+        deliveryOptions: [
+          { handle: "standard", title: "Standard Shipping" },
+          { handle: "express", title: "Express Shipping" },
+        ],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0]).toMatchObject({
+      message: "Free Shipping",
+      targets: [
+        {
+          deliveryOption: {
+            handle: "standard",
+          },
+        },
+      ],
+    });
+  });
+
+  test("discounts standard shipping for a newly declared Has_Variant product tag", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          productTags: ["box_shipping", "subs_box_mvp", "bf22_exc", "ACTIVEJEWELRY50", "Has_Variant"],
+          shippingDiscounts: [
+            {
+              id: "has-variant-free-standard",
+              enabled: true,
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 1,
+                  match: "match",
+                  tags: ["Has_Variant"],
+                },
+              },
+              rateSelector: {
+                type: "deliveryOptionsWhereTitleIncludes",
+                values: ["standard"],
+              },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "Free Shipping",
+              },
+            },
+          ],
+        },
+        lines: [productLine({ dynamicTags: [{ tag: "Has_Variant", hasTag: true }] })],
+        deliveryOptions: [
+          { handle: "standard-eco", title: "Standard eco Delivery (5 to 10 business days)" },
+          { handle: "standard", title: "Standard Shipping EU (2 to 7 business days)" },
+          { handle: "express", title: "DHL Express Delivery" },
+        ],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0]).toMatchObject({
+      message: "Free Shipping",
+      targets: [
+        {
+          deliveryOption: {
+            handle: "standard-eco",
+          },
+        },
+        {
+          deliveryOption: {
+            handle: "standard",
+          },
+        },
+      ],
+    });
+  });
+
+  test("matches dynamic product tags case-insensitively once Shopify returns them", () => {
+    const result = cartDeliveryOptionsDiscountsGenerateRun(
+      input({
+        config: {
+          version: 1,
+          productTags: ["Has_Variant"],
+          shippingDiscounts: [
+            {
+              id: "case-insensitive-dynamic-tag",
+              enabled: true,
+              conditions: {
+                lineProductTagQuantity: {
+                  comparison: "greater_than_or_equal",
+                  amount: 1,
+                  match: "match",
+                  tags: ["has_variant"],
+                },
+              },
+              rateSelector: {
+                type: "deliveryOptionsWhereTitleIncludes",
+                values: ["standard"],
+              },
+              discount: {
+                type: "percentage",
+                value: 100,
+                message: "Free Shipping",
+              },
+            },
+          ],
+        },
+        lines: [productLine({ dynamicTags: [{ tag: "Has_Variant", hasTag: true }] })],
+        deliveryOptions: [{ handle: "standard", title: "Standard Shipping EU" }],
+      }),
+    );
+
+    expect(result.operations[0].deliveryDiscountsAdd.candidates[0].targets).toEqual([
+      {
+        deliveryOption: {
+          handle: "standard",
+        },
+      },
+    ]);
   });
 });

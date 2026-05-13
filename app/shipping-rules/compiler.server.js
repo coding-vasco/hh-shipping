@@ -1,59 +1,16 @@
 import vm from "node:vm";
 
-const SUPPORTED_PRODUCT_TAGS = new Set(["box_shipping", "subs_box_mvp", "bf22_exc"]);
+const MAX_PRODUCT_TAG_VARIABLES = 100;
 
-export const DEFAULT_RULES_SCRIPT = `// HH shipping rules Phase 1
-// Product tags must also be wired in the Delivery Customization Function input query.
+export const DEFAULT_RULES_SCRIPT = `// HH shipping rules
+// Default state is intentionally empty and fail-open.
+// Paste a store-specific DSL and click Save and publish to activate campaigns.
+// Product tags are passed to Shopify Functions as input query variables.
 settings({
   productTags: ["box_shipping", "subs_box_mvp", "bf22_exc"],
 });
 
-campaigns([
-  ShippingDiscount({
-    name: "Subscription free standard shipping",
-    condition: "all",
-    qualifiers: [
-      CartHasItemQualifier({
-        comparison: "greater_than_or_equal",
-        amount: 1,
-        selector: ProductTagSelector({ match: "match", tags: ["subs_box_mvp"] }),
-      }),
-    ],
-    rateSelector: RateNameSelector({ match: "include", names: ["standard"] }),
-    discount: PercentageDiscount({ percent: 100, message: "Free Shipping" }),
-  }),
-
-  HideRates({
-    name: "VIP50/GOLDJOY subscription only",
-    condition: "all",
-    qualifiers: [
-      CodeQualifier({ match: "include", codes: ["VIP50", "GOLDJOY"] }),
-    ],
-    rateSelector: RateNameSelector({
-      match: "does_not_include",
-      names: ["subscription"],
-    }),
-  }),
-
-  HideRates({
-    name: "Normal carts hide subscription",
-    condition: "any",
-    qualifiers: [
-      NoDiscountCodeQualifier(),
-      CodeQualifier({ match: "does_not_include", codes: ["VIP50", "GOLDJOY"] }),
-    ],
-    rateSelector: RateNameSelector({ match: "include", names: ["subscription"] }),
-  }),
-
-  HideRates({
-    name: "HHCSF hides eco",
-    condition: "all",
-    qualifiers: [
-      CodeQualifier({ match: "include", codes: ["HHCSF"] }),
-    ],
-    rateSelector: RateNameSelector({ match: "include", names: ["eco"] }),
-  }),
-]);`;
+campaigns([]);`;
 
 export const DEFAULT_RULES = compileRulesScript(DEFAULT_RULES_SCRIPT).config;
 
@@ -146,7 +103,16 @@ function slugify(value, fallback) {
   return slug || fallback;
 }
 
-function compileQualifier(qualifier, path, errors) {
+function validateDeclaredTags(tags, declaredProductTags, path, errors) {
+  const normalizedDeclaredProductTags = new Set([...declaredProductTags].map((tag) => tag.toLowerCase()));
+  for (const tag of tags) {
+    if (!normalizedDeclaredProductTags.has(tag.toLowerCase())) {
+      errors.push(`${path} references "${tag}", but settings.productTags does not include it.`);
+    }
+  }
+}
+
+function compileQualifier(qualifier, path, errors, declaredProductTags = new Set()) {
   if (!qualifier || typeof qualifier !== "object") {
     errors.push(`${path} must be a qualifier.`);
     return {};
@@ -202,6 +168,7 @@ function compileQualifier(qualifier, path, errors) {
       const amount = assertNumber(qualifier.amount, `${path}.amount`, errors);
       const match = assertMatch(selector.match, ["match", "does_not_match"], `${path}.selector.match`, errors);
       const tags = asStringArray(selector.tags, `${path}.selector.tags`, errors);
+      validateDeclaredTags(tags, declaredProductTags, `${path}.selector.tags`, errors);
       return {
         lineProductTagQuantity: {
           comparison,
@@ -298,21 +265,27 @@ function validateSettings(settingsValue, errors) {
     return [];
   }
 
-  const normalizedTags = Array.from(tags, (tag) => String(tag).trim()).filter(Boolean);
-  for (const tag of normalizedTags) {
-    if (!SUPPORTED_PRODUCT_TAGS.has(tag)) {
-      errors.push(
-        `Product tag "${tag}" is not wired in the function input query yet. Supported tags: ${[
-          ...SUPPORTED_PRODUCT_TAGS,
-        ].join(", ")}.`,
-      );
+  const normalizedTags = [];
+  const seen = new Set();
+  tags.forEach((tag, index) => {
+    const normalized = String(tag).trim();
+    if (!normalized) {
+      errors.push(`settings.productTags[${index}] must be a non-empty string.`);
+      return;
     }
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    normalizedTags.push(normalized);
+  });
+
+  if (normalizedTags.length > MAX_PRODUCT_TAG_VARIABLES) {
+    errors.push(`settings.productTags can contain at most ${MAX_PRODUCT_TAG_VARIABLES} tags.`);
   }
 
   return normalizedTags;
 }
 
-function compileHideRatesCampaign(campaign, index, errors) {
+function compileHideRatesCampaign(campaign, index, errors, declaredProductTags) {
   const path = `campaigns[${index}]`;
   const condition = assertMatch(campaign.condition ?? "all", ["all", "any"], `${path}.condition`, errors);
   const qualifiers = Array.isArray(campaign.qualifiers) ? campaign.qualifiers : [];
@@ -331,13 +304,13 @@ function compileHideRatesCampaign(campaign, index, errors) {
     return qualifiers.map((qualifier, qualifierIndex) => ({
       ...base,
       id: `${slugify(campaign.name, `campaign-${index + 1}`)}-${qualifierIndex + 1}`,
-      conditions: compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors),
+      conditions: compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors, declaredProductTags),
     }));
   }
 
   const conditions = {};
   qualifiers.forEach((qualifier, qualifierIndex) => {
-    Object.assign(conditions, compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors));
+    Object.assign(conditions, compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors, declaredProductTags));
   });
 
   return [
@@ -349,7 +322,7 @@ function compileHideRatesCampaign(campaign, index, errors) {
   ];
 }
 
-function compileShippingDiscountCampaign(campaign, index, errors) {
+function compileShippingDiscountCampaign(campaign, index, errors, declaredProductTags) {
   const path = `campaigns[${index}]`;
   const condition = assertMatch(campaign.condition ?? "all", ["all", "any"], `${path}.condition`, errors);
   const qualifiers = Array.isArray(campaign.qualifiers) ? campaign.qualifiers : [];
@@ -370,13 +343,13 @@ function compileShippingDiscountCampaign(campaign, index, errors) {
     return qualifiers.map((qualifier, qualifierIndex) => ({
       ...base,
       id: `${slugify(campaign.name, `shipping-discount-${index + 1}`)}-${qualifierIndex + 1}`,
-      conditions: compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors),
+      conditions: compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors, declaredProductTags),
     }));
   }
 
   const conditions = {};
   qualifiers.forEach((qualifier, qualifierIndex) => {
-    Object.assign(conditions, compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors));
+    Object.assign(conditions, compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors, declaredProductTags));
   });
 
   return [
@@ -388,7 +361,7 @@ function compileShippingDiscountCampaign(campaign, index, errors) {
   ];
 }
 
-function compileCartValidationCampaign(campaign, index, errors) {
+function compileCartValidationCampaign(campaign, index, errors, declaredProductTags) {
   const path = `campaigns[${index}]`;
   const condition = assertMatch(campaign.condition ?? "all", ["all", "any"], `${path}.condition`, errors);
   const qualifiers = Array.isArray(campaign.qualifiers) ? campaign.qualifiers : [];
@@ -414,13 +387,13 @@ function compileCartValidationCampaign(campaign, index, errors) {
     return qualifiers.map((qualifier, qualifierIndex) => ({
       ...base,
       id: `${slugify(campaign.name, `cart-validation-${index + 1}`)}-${qualifierIndex + 1}`,
-      conditions: compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors),
+      conditions: compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors, declaredProductTags),
     }));
   }
 
   const conditions = {};
   qualifiers.forEach((qualifier, qualifierIndex) => {
-    Object.assign(conditions, compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors));
+    Object.assign(conditions, compileQualifier(qualifier, `${path}.qualifiers[${qualifierIndex}]`, errors, declaredProductTags));
   });
 
   return [
@@ -432,7 +405,7 @@ function compileCartValidationCampaign(campaign, index, errors) {
   ];
 }
 
-function compileCampaigns(campaigns, errors) {
+function compileCampaigns(campaigns, errors, declaredProductTags) {
   const rules = [];
   const shippingDiscounts = [];
   const validations = [];
@@ -445,17 +418,17 @@ function compileCampaigns(campaigns, errors) {
     }
 
     if (campaign.type === "HideRates") {
-      rules.push(...compileHideRatesCampaign(campaign, index, errors));
+      rules.push(...compileHideRatesCampaign(campaign, index, errors, declaredProductTags));
       return;
     }
 
     if (campaign.type === "ShippingDiscount") {
-      shippingDiscounts.push(...compileShippingDiscountCampaign(campaign, index, errors));
+      shippingDiscounts.push(...compileShippingDiscountCampaign(campaign, index, errors, declaredProductTags));
       return;
     }
 
     if (campaign.type === "CartValidation") {
-      validations.push(...compileCartValidationCampaign(campaign, index, errors));
+      validations.push(...compileCartValidationCampaign(campaign, index, errors, declaredProductTags));
       return;
     }
 
@@ -537,14 +510,15 @@ export function compileRulesScript(source) {
   const result = script.runInContext(context, { timeout: 100 });
   const errors = [];
 
-  validateSettings(result.settings, errors);
+  const productTags = validateSettings(result.settings, errors);
+  const declaredProductTags = new Set(productTags);
 
   if (!Array.isArray(result.campaigns)) {
     errors.push("The script must call campaigns([...]).");
   }
 
-  const { rules, shippingDiscounts, validations } = compileCampaigns(result.campaigns, errors);
-  const config = { version: 1, rules, shippingDiscounts, validations };
+  const { rules, shippingDiscounts, validations } = compileCampaigns(result.campaigns, errors, declaredProductTags);
+  const config = { version: 1, productTags, rules, shippingDiscounts, validations };
   errors.push(...validateRulesConfig(config));
 
   if (errors.length > 0) {

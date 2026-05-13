@@ -8,10 +8,10 @@ describe("shipping rules DSL compiler", () => {
     const { config } = compileRulesScript(DEFAULT_RULES_SCRIPT);
 
     assert.equal(config.version, 1);
-    assert.equal(config.rules.length, 4);
-    assert.equal(config.shippingDiscounts.length, 1);
-    assert.equal(config.rules[0].conditions.discountCodeIncludes[0], "VIP50");
-    assert.equal(config.rules[0].actions[0].type, "hideDeliveryOptionsWhereTitleDoesNotInclude");
+    assert.deepEqual(config.productTags, ["box_shipping", "subs_box_mvp", "bf22_exc"]);
+    assert.deepEqual(config.rules, []);
+    assert.deepEqual(config.shippingDiscounts, []);
+    assert.deepEqual(config.validations, []);
   });
 
   test("expands any-condition campaigns into separate rules", () => {
@@ -119,14 +119,61 @@ describe("shipping rules DSL compiler", () => {
   });
 
 
-  test("rejects product tags that are not wired in the function input query", () => {
+  test("allows product tags declared in settings", () => {
+    const { config } = compileRulesScript(`
+      settings({ productTags: ["new_ops_tag"] });
+      campaigns([
+        HideRates({
+          name: "Ops tag",
+          condition: "all",
+          qualifiers: [
+            CartHasItemQualifier({
+              comparison: "greater_than_or_equal",
+              amount: 1,
+              selector: ProductTagSelector({ match: "match", tags: ["new_ops_tag"] }),
+            }),
+          ],
+          rateSelector: RateNameSelector({ match: "include", names: ["eco"] }),
+        }),
+      ]);
+    `);
+
+    assert.deepEqual(config.productTags, ["new_ops_tag"]);
+    assert.deepEqual(config.rules[0].conditions.lineProductTagQuantity.tags, ["new_ops_tag"]);
+  });
+
+  test("allows selector product tag casing to differ from settings casing", () => {
+    const { config } = compileRulesScript(`
+      settings({ productTags: ["Has_Variant"] });
+      campaigns([
+        ShippingDiscount({
+          name: "Has variant free standard shipping",
+          condition: "all",
+          qualifiers: [
+            CartHasItemQualifier({
+              comparison: "greater_than_or_equal",
+              amount: 1,
+              selector: ProductTagSelector({ match: "match", tags: ["has_variant"] }),
+            }),
+          ],
+          rateSelector: RateNameSelector({ match: "include", names: ["standard"] }),
+          discount: PercentageDiscount({ percent: 100, message: "Free Shipping" }),
+        }),
+      ]);
+    `);
+
+    assert.deepEqual(config.productTags, ["Has_Variant"]);
+    assert.deepEqual(config.shippingDiscounts[0].conditions.lineProductTagQuantity.tags, ["has_variant"]);
+  });
+
+  test("rejects product tags that are not declared in settings", () => {
     assert.throws(
       () =>
         compileRulesScript(`
-          settings({ productTags: ["new_ops_tag"] });
+          settings({ productTags: ["box_shipping"] });
           campaigns([
             HideRates({
-              name: "Unsupported tag",
+              name: "Undeclared tag",
               condition: "all",
               qualifiers: [
                 CartHasItemQualifier({
@@ -139,7 +186,7 @@ describe("shipping rules DSL compiler", () => {
             }),
           ]);
         `),
-      /new_ops_tag/,
+      /settings\.productTags/,
     );
   });
 

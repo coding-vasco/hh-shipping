@@ -51,12 +51,33 @@ Run from the repo root in Windows PowerShell.
 git checkout production
 git merge main
 npm run test:rules
+npm run validate:production-rules
 npm run build
 npm exec -- shopify app config use production
 npm exec -- shopify app deploy --allow-updates --message "Production release"
 ```
 
 Render should auto-deploy the `production` branch if the production service is configured to track that branch.
+
+The production rules validator compiles the three store DSL files, checks that each required store file exists, compares the compiled JSON against golden snapshots, and prints checkout-risk warnings for discount-code rules, hide-all-rates rules, shipping discounts, and validations.
+
+Useful variants:
+
+```powershell
+npm run validate:production-rules -- --store hey-harper-shop-nl.myshopify.com
+npm run validate:production-rules -- --json
+npm run validate:production-rules -- --strict
+npm run validate:production-rules -- --no-snapshots
+```
+
+`npm run test:rules` also runs runtime golden tests that feed representative EU/UK/US production DSL scenarios into the actual Delivery Customization, Shipping Discount, and Checkout Validation Function modules. These tests are intentionally close to checkout behavior and should be updated when a production campaign behavior changes intentionally.
+
+If a production DSL change is intentional, update snapshots before opening the PR:
+
+```powershell
+npm run snapshot:production
+npm run test:rules
+```
 
 ## Per-Store Publishing
 

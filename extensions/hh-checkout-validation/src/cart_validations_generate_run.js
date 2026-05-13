@@ -5,6 +5,14 @@
  * @typedef {import("../generated/api").CartValidationsGenerateRunResult} CartValidationsGenerateRunResult
  */
 
+const DEFAULT_CONTROL = {
+  enabled: true,
+  disableHideRates: false,
+  disableShippingDiscounts: false,
+  disableCartValidations: false,
+  disableDiscountCodeRules: false,
+};
+
 function lower(value) {
   return String(value ?? "").toLowerCase();
 }
@@ -35,33 +43,39 @@ function parseDiscountCodes(value) {
   }
 }
 
+function productTags(product) {
+  const tags = [];
+
+  if (Array.isArray(product.dynamicTags)) {
+    for (const tagResponse of product.dynamicTags) {
+      if (tagResponse?.hasTag && tagResponse.tag) tags.push(String(tagResponse.tag));
+    }
+  }
+
+  if (product.boxShipping) tags.push("box_shipping");
+  if (product.subsBoxMvp) tags.push("subs_box_mvp");
+  if (product.bf22Exc) tags.push("bf22_exc");
+
+  return [...new Set(tags)];
+}
+
 function cartSignals(input) {
-  const lines = input.cart.lines ?? [];
+  const cart = input.cart ?? {};
+  const lines = Array.isArray(cart.lines) ? cart.lines : [];
   const knownTags = [];
   const taggedLines = [];
 
   for (const line of lines) {
     const product = line.merchandise?.product;
     if (!product) continue;
-    const tags = [];
-    if (product.boxShipping) {
-      knownTags.push("box_shipping");
-      tags.push("box_shipping");
-    }
-    if (product.subsBoxMvp) {
-      knownTags.push("subs_box_mvp");
-      tags.push("subs_box_mvp");
-    }
-    if (product.bf22Exc) {
-      knownTags.push("bf22_exc");
-      tags.push("bf22_exc");
-    }
+    const tags = productTags(product);
+    knownTags.push(...tags);
     taggedLines.push({ quantity: line.quantity ?? 0, tags });
   }
 
   return {
-    discountCodes: parseDiscountCodes(input.cart.discountCodes?.value),
-    subtotal: Number(input.cart.cost?.subtotalAmount?.amount ?? 0),
+    discountCodes: parseDiscountCodes(cart.discountCodes?.value),
+    subtotal: Number(cart.cost?.subtotalAmount?.amount ?? 0),
     totalQuantity: lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0),
     knownTags,
     taggedLines,
@@ -142,18 +156,58 @@ function rulesConfig(input) {
   return { version: 1, validations: [] };
 }
 
+function controlConfig(input) {
+  const control = input.shop?.metafield?.jsonValue;
+  if (!control || typeof control !== "object") return DEFAULT_CONTROL;
+
+  return {
+    ...DEFAULT_CONTROL,
+    enabled: control.enabled !== false,
+    disableHideRates: control.disableHideRates === true,
+    disableShippingDiscounts: control.disableShippingDiscounts === true,
+    disableCartValidations: control.disableCartValidations === true,
+    disableDiscountCodeRules: control.disableDiscountCodeRules === true,
+  };
+}
+
+function usesDiscountCodeConditions(rule) {
+  const conditions = rule?.conditions ?? {};
+  return Boolean(
+    conditions.noDiscountCode ||
+      Array.isArray(conditions.discountCodeIncludes) ||
+      Array.isArray(conditions.discountCodeDoesNotInclude),
+  );
+}
+
 /**
  * @param {CartValidationsGenerateRunInput} input
  * @returns {CartValidationsGenerateRunResult}
  */
 export function cartValidationsGenerateRun(input) {
   const config = rulesConfig(input);
+  const controls = controlConfig(input);
   const signals = cartSignals(input);
   const errors = [];
 
+  if (!controls.enabled || controls.disableCartValidations) {
+    return {
+      operations: [
+        {
+          validationAdd: {
+            errors,
+          },
+        },
+      ],
+    };
+  }
+
   for (const rule of config.validations) {
+    if (!rule || typeof rule !== "object") continue;
     if (rule.enabled === false) continue;
+    if (controls.disableDiscountCodeRules && usesDiscountCodeConditions(rule)) continue;
     if (!matchesConditions(rule, signals)) continue;
+
+    if (typeof rule.message !== "string" || !rule.message.trim()) continue;
 
     errors.push({
       message: rule.message,
