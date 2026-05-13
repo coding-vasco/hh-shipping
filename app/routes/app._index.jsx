@@ -26,6 +26,7 @@ const DRAFTS_KEY = "dsl-drafts";
 const FUNCTION_INPUT_NAMESPACE = "$app:hh-function-input";
 const FUNCTION_INPUT_KEY = "input-variables";
 const MAX_DSL_DRAFTS = 10;
+const ALWAYS_ACTIVE_DISCOUNT_STARTS_AT = "2020-01-01T00:00:00Z";
 const EMPTY_RULES_JSON = JSON.stringify(
   {
     version: 1,
@@ -375,6 +376,12 @@ async function publishShippingDiscountConfig(admin, config) {
   const existing = await getShippingDiscountStatus(admin);
   const existingId = existing?.discountId ?? null;
   const automaticAppDiscount = shippingDiscountInput(config);
+  const mutationInput = existingId
+    ? automaticAppDiscount
+    : {
+        ...automaticAppDiscount,
+        startsAt: ALWAYS_ACTIVE_DISCOUNT_STARTS_AT,
+      };
   const mutation = existingId
     ? `#graphql
       mutation UpdateShippingDiscount($id: ID!, $automaticAppDiscount: DiscountAutomaticAppInput!) {
@@ -408,7 +415,7 @@ async function publishShippingDiscountConfig(admin, config) {
     `;
 
   const response = await admin.graphql(mutation, {
-    variables: existingId ? { id: existingId, automaticAppDiscount } : { automaticAppDiscount },
+    variables: existingId ? { id: existingId, automaticAppDiscount: mutationInput } : { automaticAppDiscount: mutationInput },
   });
   const json = await response.json();
   assertNoGraphqlErrors(json);
